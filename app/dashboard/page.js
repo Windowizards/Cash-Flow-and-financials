@@ -989,6 +989,40 @@ export default function DashboardPage() {
     </>
   );
 
+  // ---------- Defer: push a payment's due date out, with a paper trail ----------
+  const fmtMD = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+
+  const deferPayment = (row) => {
+    const current = nextDue(row.due);
+    const currentLabel = current ? fmtMD(current) : (row.due || 'no date set');
+    const input = window.prompt(
+      `Defer "${row.name || 'this'}" — currently due ${currentLabel}.\n\nType a number of days to push it out (e.g. 14), or type an exact new date (e.g. 9/20):`,
+      '14'
+    );
+    if (input == null || !input.trim()) return;
+    const trimmed = input.trim();
+    let newDate;
+    if (/^\d+$/.test(trimmed)) {
+      newDate = new Date(current || new Date());
+      newDate.setDate(newDate.getDate() + parseInt(trimmed, 10));
+    } else {
+      newDate = nextDue(trimmed);
+      if (!newDate) {
+        window.alert('Couldn\'t read that date — try a number of days, or M/D format like 9/20.');
+        return;
+      }
+    }
+    const newLabel = fmtMD(newDate);
+    setData(d => ({
+      ...d,
+      cards: d.cards.map(c => c.id === row.id ? { ...c, due: newLabel, deferredFrom: c.deferredFrom || currentLabel } : c),
+      history: [
+        { id: Date.now(), date: new Date().toISOString(), kind: 'deferred', name: row.name || 'item', from: currentLabel, to: newLabel },
+        ...(d.history || []),
+      ].slice(0, 50),
+    }));
+  };
+
   const countToggle = (key) => (
     <label className="count-toggle" title="On = this tab counts in overview totals and projection. Off = tracked here only.">
       <input type="checkbox" checked={cnt(key)} onChange={e => setCounted(key, e.target.checked)} />
@@ -1511,8 +1545,9 @@ export default function DashboardPage() {
     label: 'Due in',
     fn: (row) => {
       const days = daysUntilDue(row.due);
-      if (days == null) return '—';
-      return days <= 0 ? 'TODAY' : days + 'd';
+      const base = days == null ? '—' : (days <= 0 ? 'TODAY' : days + 'd');
+      if (!row.deferredFrom) return base;
+      return <>{base} <span className="deferred-tag" title={`Originally due ${row.deferredFrom}, deferred`}>⏰</span></>;
     },
     className: (row) => {
       const days = daysUntilDue(row.due);
@@ -1525,6 +1560,8 @@ export default function DashboardPage() {
     const dd = daysUntilDue(c.due);
     return dd != null && dd <= days ? s + (c.amount || 0) : s;
   }, 0);
+
+  const deferredCount = data.cards.filter(c => c.deferredFrom).length;
 
   const OWED_GROUPS = [['credit card', 'Credit cards'], ['person', 'People'], ['business', 'Business']];
   const activeCustom = tab.startsWith('custom-')
@@ -1717,8 +1754,17 @@ export default function DashboardPage() {
                 <h3>Recent activity</h3>
                 {(data.history || []).slice(0, 8).map(h => (
                   <p key={h.id} className="history-line">
-                    <span className={h.kind === 'collected' ? 'g-pos' : 'g-neg'}>{h.kind === 'collected' ? '+' : '−'}{fmt(h.amount)}</span>
-                    {' '}{h.kind === 'collected' ? 'collected from' : 'paid'} <strong>{h.name}</strong>
+                    {h.kind === 'deferred' ? (
+                      <>
+                        <span className="g-mid">⏰ deferred</span>
+                        {' '}<strong>{h.name}</strong>: {h.from} → {h.to}
+                      </>
+                    ) : (
+                      <>
+                        <span className={h.kind === 'collected' ? 'g-pos' : 'g-neg'}>{h.kind === 'collected' ? '+' : '−'}{fmt(h.amount)}</span>
+                        {' '}{h.kind === 'collected' ? 'collected from' : 'paid'} <strong>{h.name}</strong>
+                      </>
+                    )}
                     <span className="day-offset"> · {new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                   </p>
                 ))}
@@ -1824,6 +1870,12 @@ export default function DashboardPage() {
                 <div className="info-label">Due next 30 days</div>
                 <div className="info-value">{fmt(owedDueWithin(30))}</div>
               </div>
+              {deferredCount > 0 && (
+                <div className="info-box warning">
+                  <div className="info-label">Deferred payments</div>
+                  <div className="info-value">{deferredCount}</div>
+                </div>
+              )}
             </div>
 
             {OWED_GROUPS
@@ -1848,6 +1900,7 @@ export default function DashboardPage() {
                       rowActions={(row) => (
                         <>
                           {payButtons('cards', row, 'Fully paid — subtracts from cash', 'Partial payment — enter how much you paid')}
+                          <button className="act-btn defer" title="Defer — push this due date out" onClick={() => deferPayment(row)}>⏰</button>
                           {g === 'credit card' && <button className="act-btn zero" title="Move to 0% cards tab" onClick={() => moveToZero(row)}>0%</button>}
                         </>
                       )}

@@ -392,7 +392,7 @@
 
 .projection-info {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 20px;
   margin-bottom: 32px;
 }
@@ -403,6 +403,15 @@
   border-radius: 12px;
   padding: 24px;
   text-align: center;
+}
+
+.info-box.warning {
+  background: linear-gradient(135deg, rgba(255, 190, 11, 0.12) 0%, rgba(255, 0, 110, 0.08) 100%);
+  border-color: rgba(255, 190, 11, 0.35);
+}
+
+.info-box.warning .info-value {
+  color: #ffbe0b;
 }
 
 .info-label {
@@ -810,6 +819,22 @@
 .act-btn.partial:hover {
   background: rgba(255, 190, 11, 0.28);
   box-shadow: 0 4px 12px rgba(255, 190, 11, 0.2);
+}
+
+.act-btn.defer {
+  background: rgba(255, 190, 11, 0.15);
+  border-color: rgba(255, 190, 11, 0.35);
+  color: #ffbe0b;
+}
+
+.act-btn.defer:hover {
+  background: rgba(255, 190, 11, 0.28);
+  box-shadow: 0 4px 12px rgba(255, 190, 11, 0.2);
+}
+
+.deferred-tag {
+  cursor: help;
+  font-size: 11px;
 }
 
 .act-btn.zero {
