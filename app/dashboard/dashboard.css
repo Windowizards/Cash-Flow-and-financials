@@ -610,6 +610,98 @@
   font-size: 13px;
 }
 
+.chip-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.chip {
+  padding: 8px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  color: #a8b5d1;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip:hover {
+  color: #00d9ff;
+  border-color: #00d9ff;
+}
+
+.chip.active {
+  color: #0a0e27;
+  background: linear-gradient(135deg, #00d9ff 0%, #8338ec 100%);
+  border-color: transparent;
+}
+
+.totals-row td {
+  border-top: 2px solid rgba(0, 217, 255, 0.25);
+  font-weight: 700;
+  color: #a8b5d1;
+  font-size: 13px;
+}
+
+.nav-btn.custom {
+  color: #8338ec;
+}
+
+.nav-btn.custom.active {
+  color: #00d9ff;
+}
+
+.nav-btn.new-tab {
+  color: #5a6b85;
+  font-style: italic;
+}
+
+.nav-btn.new-tab:hover {
+  color: #06ffa5;
+}
+
+.sheet-panel {
+  margin-top: 24px;
+}
+
+.sheet-help {
+  font-size: 13px;
+}
+
+.sheet-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.sheet-controls input {
+  flex: 1;
+  min-width: 260px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #ffffff;
+  font-size: 13px;
+  font-family: 'Monaco', monospace;
+}
+
+.sheet-controls input:focus {
+  outline: none;
+  border-color: #00d9ff;
+}
+
+.sheet-msg {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #06ffa5;
+}
+
 .auth-screen {
   min-height: 100vh;
   display: flex;

@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import './dashboard.css';
 
+const NUM_DAYS = 9;
+const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
 const SEED = {
   accounts: [
     { id: 1, name: 'Citi checking', balance: 29000, notes: '' },
@@ -76,17 +79,32 @@ const SEED = {
       ],
     },
   ],
+  standardPayroll: {
+    workers: [
+      { id: 1, name: 'Stu', rate: 300, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 2, name: 'Luke', rate: 30, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 3, name: 'Julio', rate: 25, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 4, name: 'Perez', rate: 25, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 5, name: 'Jer', rate: 30, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 6, name: 'Kai', rate: 20, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 7, name: 'Marcus', rate: 20, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 8, name: 'Noah', rate: 17.5, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    ],
+  },
+  zeroCards: [
+    { id: 1, name: 'Wells Fargo 0%', balance: 0, limit: 8000, promoEnd: '', notes: '' },
+    { id: 2, name: 'Chase business 0%', balance: 30000, limit: 29000, promoEnd: '', notes: '' },
+  ],
+  chinaOrder: [],
+  personalPurchases: [],
+  customTabs: [],
   debts: [
     { id: 1, name: 'Mom', amount: 40000, limit: 0, notes: '' },
-    { id: 2, name: 'Chase CC', amount: 30000, limit: 29000, notes: '0% card' },
-    { id: 3, name: 'Wells Fargo 0%', amount: 0, limit: 8000, notes: '0% card' },
     { id: 4, name: 'Travel', amount: 20000, limit: 0, notes: '' },
     { id: 5, name: 'Mortgage', amount: 162000, limit: 0, notes: '' },
   ],
+  sheetWebhook: '',
 };
-
-const NUM_DAYS = 9;
-const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 
 function fmt(n) {
   const v = Math.round(n || 0);
@@ -120,8 +138,12 @@ function nextDue(str) {
   return d;
 }
 
+const workerTotal = (w) => (w.rate || 0) * w.hours.reduce((a, b) => a + (b || 0), 0);
+const gridTotal = (workers) => workers.reduce((s, w) => s + workerTotal(w), 0);
+
 export default function DashboardPage() {
   const [tab, setTab] = useState('overview');
+  const [payrollView, setPayrollView] = useState('overall');
   const [data, setData] = useState(SEED);
   const [loaded, setLoaded] = useState(false);
   const [session, setSession] = useState(null);
@@ -131,6 +153,8 @@ export default function DashboardPage() {
   const [linkSent, setLinkSent] = useState(false);
   const [authErr, setAuthErr] = useState('');
   const [syncState, setSyncState] = useState('');
+  const [sheetBusy, setSheetBusy] = useState(false);
+  const [sheetMsg, setSheetMsg] = useState('');
 
   useEffect(() => {
     if (!supabase) {
@@ -311,6 +335,11 @@ export default function DashboardPage() {
   const totalIncoming = data.incoming.reduce((s, i) => s + (i.amount || 0), 0);
   const totalMonthly = data.monthly.reduce((s, e) => s + (e.amount || 0), 0);
   const totalDebts = data.debts.reduce((s, d) => s + (d.amount || 0), 0);
+  const totalZero = (data.zeroCards || []).reduce((s, z) => s + (z.balance || 0), 0);
+  const chinaTotal = (data.chinaOrder || []).reduce((s, c) => s + (c.amount || 0), 0);
+  const chinaPaid = (data.chinaOrder || []).reduce((s, c) => s + (c.paid || 0), 0);
+  const purchasesPlanned = (data.personalPurchases || []).filter(p => p.status === 'planned').reduce((s, p) => s + (p.amount || 0), 0);
+  const purchasesBought = (data.personalPurchases || []).filter(p => p.status === 'bought').reduce((s, p) => s + (p.amount || 0), 0);
   const dailyBurn = totalMonthly / 30;
   const netNow = totalCash - totalOwed;
   const projected = netNow + totalIncoming;
@@ -327,54 +356,45 @@ export default function DashboardPage() {
     }));
   };
   const addToList = (key, blank) => {
-    setData(d => ({ ...d, [key]: [...d[key], { ...blank, id: Date.now() }] }));
+    setData(d => ({ ...d, [key]: [...(d[key] || []), { ...blank, id: Date.now() }] }));
   };
   const removeFromList = (key, id) => {
     setData(d => ({ ...d, [key]: d[key].filter(row => row.id !== id) }));
   };
 
-  // ---------- Payroll helpers ----------
-  const jobLabor = (job) => job.workers.reduce((s, w) => s + (w.rate || 0) * w.hours.reduce((a, b) => a + (b || 0), 0), 0);
-  const jobExtras = (job) => job.extras.reduce((s, e) => s + (e.amount || 0), 0);
+  // ---------- Payroll helpers (generic over standard + jobs) ----------
+  const getWorkers = (target) => target === 'standard'
+    ? (data.standardPayroll || { workers: [] }).workers
+    : (data.jobs.find(j => j.id === target) || { workers: [] }).workers;
 
-  const updateWorker = (jobId, workerId, field, value) => {
-    setData(d => ({
-      ...d,
-      jobs: d.jobs.map(j => j.id !== jobId ? j : {
-        ...j,
-        workers: j.workers.map(w => w.id === workerId ? { ...w, [field]: field === 'rate' ? (parseFloat(value) || 0) : value } : w),
-      }),
+  const setWorkers = (target, updater) => {
+    setData(d => {
+      if (target === 'standard') {
+        const sp = d.standardPayroll || { workers: [] };
+        return { ...d, standardPayroll: { ...sp, workers: updater(sp.workers) } };
+      }
+      return { ...d, jobs: d.jobs.map(j => j.id === target ? { ...j, workers: updater(j.workers) } : j) };
+    });
+  };
+
+  const updateWorker = (target, workerId, field, value) => {
+    setWorkers(target, ws => ws.map(w => w.id === workerId ? { ...w, [field]: field === 'rate' ? (parseFloat(value) || 0) : value } : w));
+  };
+  const updateHours = (target, workerId, dayIdx, value) => {
+    setWorkers(target, ws => ws.map(w => {
+      if (w.id !== workerId) return w;
+      const hours = [...w.hours];
+      hours[dayIdx] = parseFloat(value) || 0;
+      return { ...w, hours };
     }));
   };
-  const updateHours = (jobId, workerId, dayIdx, value) => {
-    setData(d => ({
-      ...d,
-      jobs: d.jobs.map(j => j.id !== jobId ? j : {
-        ...j,
-        workers: j.workers.map(w => {
-          if (w.id !== workerId) return w;
-          const hours = [...w.hours];
-          hours[dayIdx] = parseFloat(value) || 0;
-          return { ...w, hours };
-        }),
-      }),
-    }));
+  const addWorker = (target) => {
+    setWorkers(target, ws => [...ws, { id: Date.now(), name: '', rate: 0, hours: Array(NUM_DAYS).fill(0) }]);
   };
-  const addWorker = (jobId) => {
-    setData(d => ({
-      ...d,
-      jobs: d.jobs.map(j => j.id !== jobId ? j : {
-        ...j,
-        workers: [...j.workers, { id: Date.now(), name: '', rate: 0, hours: Array(NUM_DAYS).fill(0) }],
-      }),
-    }));
+  const removeWorker = (target, workerId) => {
+    setWorkers(target, ws => ws.filter(w => w.id !== workerId));
   };
-  const removeWorker = (jobId, workerId) => {
-    setData(d => ({
-      ...d,
-      jobs: d.jobs.map(j => j.id !== jobId ? j : { ...j, workers: j.workers.filter(w => w.id !== workerId) }),
-    }));
-  };
+
   const updateExtra = (jobId, extraId, field, value) => {
     setData(d => ({
       ...d,
@@ -397,16 +417,130 @@ export default function DashboardPage() {
     }));
   };
   const addJob = () => {
+    const id = Date.now();
     setData(d => ({
       ...d,
-      jobs: [...d.jobs, { id: Date.now(), name: 'New job', workers: [], extras: [] }],
+      jobs: [...d.jobs, { id, name: 'New job', workers: [], extras: [] }],
     }));
+    setPayrollView(id);
   };
   const removeJob = (jobId) => {
     setData(d => ({ ...d, jobs: d.jobs.filter(j => j.id !== jobId) }));
+    setPayrollView('overall');
   };
   const updateJobName = (jobId, name) => {
     setData(d => ({ ...d, jobs: d.jobs.map(j => j.id === jobId ? { ...j, name } : j) }));
+  };
+
+  const jobLabor = (job) => gridTotal(job.workers);
+  const jobExtras = (job) => job.extras.reduce((s, e) => s + (e.amount || 0), 0);
+  const standardTotal = gridTotal((data.standardPayroll || { workers: [] }).workers);
+  const allJobsTotal = data.jobs.reduce((s, j) => s + jobLabor(j) + jobExtras(j), 0);
+
+  const overallRows = () => {
+    const names = [];
+    const seen = new Set();
+    const push = (n) => { if (n && !seen.has(n)) { seen.add(n); names.push(n); } };
+    (data.standardPayroll || { workers: [] }).workers.forEach(w => push(w.name));
+    data.jobs.forEach(j => j.workers.forEach(w => push(w.name)));
+    return names.map(name => {
+      const std = (data.standardPayroll || { workers: [] }).workers.filter(w => w.name === name).reduce((s, w) => s + workerTotal(w), 0);
+      const per = data.jobs.map(j => j.workers.filter(w => w.name === name).reduce((s, w) => s + workerTotal(w), 0));
+      return { name, std, per, total: std + per.reduce((a, b) => a + b, 0) };
+    });
+  };
+
+  // ---------- Custom tabs ----------
+  const addCustomTab = () => {
+    const id = Date.now();
+    setData(d => ({
+      ...d,
+      customTabs: [...(d.customTabs || []), { id, name: 'New tab', rows: [] }],
+    }));
+    setTab(`custom-${id}`);
+  };
+  const removeCustomTab = (id) => {
+    setData(d => ({ ...d, customTabs: (d.customTabs || []).filter(t => t.id !== id) }));
+    setTab('overview');
+  };
+  const updateCustomTab = (id, name) => {
+    setData(d => ({ ...d, customTabs: (d.customTabs || []).map(t => t.id === id ? { ...t, name } : t) }));
+  };
+  const addCustomRow = (tabId) => {
+    setData(d => ({
+      ...d,
+      customTabs: (d.customTabs || []).map(t => t.id === tabId ? { ...t, rows: [...t.rows, { id: Date.now(), name: '', amount: 0, date: '', notes: '' }] } : t),
+    }));
+  };
+  const updateCustomRow = (tabId, rowId, field, value, numeric) => {
+    setData(d => ({
+      ...d,
+      customTabs: (d.customTabs || []).map(t => t.id !== tabId ? t : {
+        ...t,
+        rows: t.rows.map(r => r.id === rowId ? { ...r, [field]: numeric ? (parseFloat(value) || 0) : value } : r),
+      }),
+    }));
+  };
+  const removeCustomRow = (tabId, rowId) => {
+    setData(d => ({
+      ...d,
+      customTabs: (d.customTabs || []).map(t => t.id !== tabId ? t : { ...t, rows: t.rows.filter(r => r.id !== rowId) }),
+    }));
+  };
+
+  // ---------- Google Sheet sync ----------
+  const SHEET_KEYS = ['accounts', 'cards', 'incoming', 'monthly', 'zeroCards', 'chinaOrder', 'personalPurchases', 'debts'];
+  const sheetPush = async () => {
+    if (!data.sheetWebhook) { setSheetMsg('Paste your Apps Script URL first'); return; }
+    setSheetBusy(true);
+    setSheetMsg('');
+    try {
+      const payload = {};
+      SHEET_KEYS.forEach(k => { payload[k] = data[k] || []; });
+      const res = await fetch('/api/sheet-bridge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: data.sheetWebhook, action: 'push', payload }),
+      });
+      const json = await res.json();
+      setSheetMsg(res.ok && json.ok ? 'Pushed to Google Sheet ✓' : 'Push failed: ' + (json.error || json.resp || 'unknown'));
+    } catch (e) {
+      setSheetMsg('Push failed: ' + String(e.message || e));
+    }
+    setSheetBusy(false);
+  };
+  const sheetPull = async () => {
+    if (!data.sheetWebhook) { setSheetMsg('Paste your Apps Script URL first'); return; }
+    setSheetBusy(true);
+    setSheetMsg('');
+    try {
+      const res = await fetch('/api/sheet-bridge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: data.sheetWebhook, action: 'pull' }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || json.resp || 'pull failed');
+      setData(d => {
+        const next = { ...d };
+        SHEET_KEYS.forEach(k => {
+          if (Array.isArray(json.data[k]) && json.data[k].length) {
+            next[k] = json.data[k].map((row, i) => {
+              const r = { ...row, id: Date.now() + i };
+              ['amount', 'balance', 'limit', 'paid', 'dueDay'].forEach(f => {
+                if (r[f] !== undefined && r[f] !== '') r[f] = parseFloat(r[f]) || 0;
+              });
+              return r;
+            });
+          }
+        });
+        return next;
+      });
+      setSheetMsg('Pulled from Google Sheet ✓');
+    } catch (e) {
+      setSheetMsg('Pull failed: ' + String(e.message || e));
+    }
+    setSheetBusy(false);
   };
 
   // ---------- Projection ----------
@@ -423,6 +557,15 @@ export default function DashboardPage() {
       const dayOffset = Math.round((d - startOfToday) / 86400000);
       if (dayOffset >= 0 && dayOffset <= HORIZON) {
         events.push({ day: dayOffset, name: `${c.name} due`, amount: c.amount });
+      }
+    });
+    (data.personalPurchases || []).forEach(p => {
+      if (p.status !== 'planned' || !p.amount || !p.date) return;
+      const d = new Date(p.date + 'T00:00:00');
+      if (isNaN(d)) return;
+      const dayOffset = Math.round((d - startOfToday) / 86400000);
+      if (dayOffset >= 0 && dayOffset <= HORIZON) {
+        events.push({ day: dayOffset, name: `${p.name || 'purchase'}`, amount: p.amount });
       }
     });
 
@@ -472,6 +615,51 @@ export default function DashboardPage() {
   if (!loaded) return <div className="dashboard-container" />;
 
   const projection = buildProjection();
+  const activeCustom = tab.startsWith('custom-')
+    ? (data.customTabs || []).find(t => `custom-${t.id}` === tab)
+    : null;
+
+  const renderWorkerGrid = (target, workers) => {
+    const dayHourTotals = Array(NUM_DAYS).fill(0);
+    workers.forEach(w => w.hours.forEach((h, i) => { dayHourTotals[i] += (h || 0); }));
+    return (
+      <div className="spreadsheet payroll-scroll">
+        <table className="data-table payroll-table">
+          <thead>
+            <tr>
+              <th>Worker</th>
+              <th className="col-rate">Rate</th>
+              {Array.from({ length: NUM_DAYS }, (_, i) => <th key={i} className="col-hr">D{i + 1}</th>)}
+              <th className="col-amount">Total</th>
+              <th className="col-x"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {workers.map(w => (
+              <tr key={w.id}>
+                <td><input type="text" value={w.name} onChange={e => updateWorker(target, w.id, 'name', e.target.value)} placeholder="Name" /></td>
+                <td><input type="number" value={w.rate || ''} onChange={e => updateWorker(target, w.id, 'rate', e.target.value)} placeholder="0" /></td>
+                {w.hours.map((h, idx) => (
+                  <td key={idx}><input className="hr-input" type="number" value={h || ''} onChange={e => updateHours(target, w.id, idx, e.target.value)} placeholder="·" /></td>
+                ))}
+                <td className="balance">{fmt(workerTotal(w))}</td>
+                <td><button className="btn-delete" onClick={() => removeWorker(target, w.id)}>✕</button></td>
+              </tr>
+            ))}
+            {workers.length > 0 && (
+              <tr className="totals-row">
+                <td>Day totals (hrs)</td>
+                <td></td>
+                {dayHourTotals.map((t, i) => <td key={i} className="daily">{t || ''}</td>)}
+                <td className="balance">{fmt(gridTotal(workers))}</td>
+                <td></td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   return (
     <div className="dashboard-container">
@@ -487,8 +675,17 @@ export default function DashboardPage() {
           <button className={`nav-btn ${tab === 'incoming' ? 'active' : ''}`} onClick={() => setTab('incoming')}>Incoming</button>
           <button className={`nav-btn ${tab === 'monthly' ? 'active' : ''}`} onClick={() => setTab('monthly')}>Monthly</button>
           <button className={`nav-btn ${tab === 'payroll' ? 'active' : ''}`} onClick={() => setTab('payroll')}>Payroll</button>
+          <button className={`nav-btn ${tab === 'zero' ? 'active' : ''}`} onClick={() => setTab('zero')}>0% cards</button>
+          <button className={`nav-btn ${tab === 'china' ? 'active' : ''}`} onClick={() => setTab('china')}>China order</button>
+          <button className={`nav-btn ${tab === 'purchases' ? 'active' : ''}`} onClick={() => setTab('purchases')}>Purchases</button>
           <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>Big debts</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
+          {(data.customTabs || []).map(t => (
+            <button key={t.id} className={`nav-btn custom ${tab === `custom-${t.id}` ? 'active' : ''}`} onClick={() => setTab(`custom-${t.id}`)}>
+              {t.name || 'Untitled'}
+            </button>
+          ))}
+          <button className="nav-btn new-tab" onClick={addCustomTab}>+ New tab</button>
         </nav>
         <div className="sidebar-foot">
           {session ? (
@@ -549,7 +746,25 @@ export default function DashboardPage() {
             <div className="quick-summary">
               <h3>Where you stand</h3>
               <p>You have <strong>{fmt(totalCash)}</strong> and owe <strong>{fmt(totalOwed)}</strong> right now, leaving <strong>{fmt(netNow)}</strong> net. With <strong>{fmt(totalIncoming)}</strong> incoming, your projected position is <strong>{fmt(projected)}</strong>.</p>
-              <p>Fixed expenses run <strong>{fmt(totalMonthly)}/month</strong> ({fmt2(dailyBurn)}/day). Long-term debt sits at <strong>{fmt(totalDebts)}</strong> (Mom, Chase CC, travel, mortgage).</p>
+              <p>Fixed expenses run <strong>{fmt(totalMonthly)}/month</strong> ({fmt2(dailyBurn)}/day). 0% cards carry <strong>{fmt(totalZero)}</strong>. Long-term debt sits at <strong>{fmt(totalDebts)}</strong>.</p>
+              {chinaTotal > 0 && <p>China order: <strong>{fmt(chinaTotal)}</strong> total, <strong>{fmt(chinaTotal - chinaPaid)}</strong> still to pay.</p>}
+              {purchasesPlanned > 0 && <p>Planned personal purchases: <strong>{fmt(purchasesPlanned)}</strong> — already factored into your projection dates.</p>}
+            </div>
+
+            <div className="quick-summary sheet-panel">
+              <h3>Google Sheet sync</h3>
+              <p className="sheet-help">Two-way sync with your spreadsheet. One-time setup: in your Google Sheet go to Extensions → Apps Script, paste the script from <strong>google-sheet-sync.gs</strong> (ask Claude for it), deploy as Web app (access: anyone), and paste the URL here.</p>
+              <div className="sheet-controls">
+                <input
+                  type="text"
+                  value={data.sheetWebhook || ''}
+                  onChange={e => setData(d => ({ ...d, sheetWebhook: e.target.value }))}
+                  placeholder="https://script.google.com/macros/s/…/exec"
+                />
+                <button className="btn-add small" onClick={sheetPush} disabled={sheetBusy}>{sheetBusy ? '…' : '⬆ Push to Sheet'}</button>
+                <button className="btn-add small" onClick={sheetPull} disabled={sheetBusy}>{sheetBusy ? '…' : '⬇ Pull from Sheet'}</button>
+              </div>
+              {sheetMsg && <p className="sheet-msg">{sheetMsg}</p>}
             </div>
           </div>
         )}
@@ -723,75 +938,258 @@ export default function DashboardPage() {
               <h2>Payroll / job costing</h2>
               <button className="btn-add" onClick={addJob}>+ Add job</button>
             </div>
-            <p className="subtitle">Rate × hours per day, per job — just like your sheet</p>
 
-            {data.jobs.map(job => (
-              <div key={job.id} className="job-block">
-                <div className="job-header">
-                  <input className="job-name" type="text" value={job.name} onChange={e => updateJobName(job.id, e.target.value)} placeholder="Job name" />
-                  <div className="job-header-actions">
-                    <button className="btn-add small" onClick={() => addWorker(job.id)}>+ Worker</button>
-                    <button className="btn-add small" onClick={() => addExtra(job.id)}>+ Extra</button>
-                    <button className="btn-delete" onClick={() => removeJob(job.id)}>✕ Job</button>
+            <div className="chip-bar">
+              <button className={`chip ${payrollView === 'overall' ? 'active' : ''}`} onClick={() => setPayrollView('overall')}>Overall</button>
+              <button className={`chip ${payrollView === 'standard' ? 'active' : ''}`} onClick={() => setPayrollView('standard')}>Standard crew</button>
+              {data.jobs.map(j => (
+                <button key={j.id} className={`chip ${payrollView === j.id ? 'active' : ''}`} onClick={() => setPayrollView(j.id)}>{j.name || 'Job'}</button>
+              ))}
+            </div>
+
+            {payrollView === 'overall' && (
+              <>
+                <p className="subtitle">Every worker across standard crew + all jobs</p>
+                <div className="projection-info">
+                  <div className="info-box">
+                    <div className="info-label">Standard crew</div>
+                    <div className="info-value">{fmt(standardTotal)}</div>
+                  </div>
+                  <div className="info-box">
+                    <div className="info-label">All jobs (labor + extras)</div>
+                    <div className="info-value">{fmt(allJobsTotal)}</div>
+                  </div>
+                  <div className="info-box">
+                    <div className="info-label">Grand total</div>
+                    <div className="info-value">{fmt(standardTotal + allJobsTotal)}</div>
                   </div>
                 </div>
-
                 <div className="spreadsheet payroll-scroll">
-                  <table className="data-table payroll-table">
+                  <table className="data-table">
                     <thead>
                       <tr>
                         <th>Worker</th>
-                        <th className="col-rate">Rate</th>
-                        {Array.from({ length: NUM_DAYS }, (_, i) => <th key={i} className="col-hr">D{i + 1}</th>)}
+                        <th className="col-amount">Standard</th>
+                        {data.jobs.map(j => <th key={j.id} className="col-amount">{j.name || 'Job'}</th>)}
                         <th className="col-amount">Total</th>
-                        <th className="col-x"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {job.workers.map(w => {
-                        const total = (w.rate || 0) * w.hours.reduce((a, b) => a + (b || 0), 0);
-                        return (
-                          <tr key={w.id}>
-                            <td><input type="text" value={w.name} onChange={e => updateWorker(job.id, w.id, 'name', e.target.value)} placeholder="Name" /></td>
-                            <td><input type="number" value={w.rate || ''} onChange={e => updateWorker(job.id, w.id, 'rate', e.target.value)} placeholder="0" /></td>
-                            {w.hours.map((h, idx) => (
-                              <td key={idx}><input className="hr-input" type="number" value={h || ''} onChange={e => updateHours(job.id, w.id, idx, e.target.value)} placeholder="·" /></td>
-                            ))}
-                            <td className="balance">{fmt(total)}</td>
-                            <td><button className="btn-delete" onClick={() => removeWorker(job.id, w.id)}>✕</button></td>
-                          </tr>
-                        );
-                      })}
+                      {overallRows().map(r => (
+                        <tr key={r.name}>
+                          <td>{r.name}</td>
+                          <td className="daily">{r.std ? fmt(r.std) : '—'}</td>
+                          {r.per.map((v, i) => <td key={i} className="daily">{v ? fmt(v) : '—'}</td>)}
+                          <td className="balance">{fmt(r.total)}</td>
+                        </tr>
+                      ))}
+                      <tr className="totals-row">
+                        <td>Extras (food, materials…)</td>
+                        <td className="daily">—</td>
+                        {data.jobs.map(j => <td key={j.id} className="daily">{jobExtras(j) ? fmt(jobExtras(j)) : '—'}</td>)}
+                        <td className="balance">{fmt(data.jobs.reduce((s, j) => s + jobExtras(j), 0))}</td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
+              </>
+            )}
 
-                {job.extras.length > 0 && (
-                  <div className="spreadsheet extras-table">
-                    <table className="data-table">
-                      <thead>
-                        <tr><th>Extra</th><th className="col-amount">Amount</th><th className="col-x"></th></tr>
-                      </thead>
-                      <tbody>
-                        {job.extras.map(ex => (
-                          <tr key={ex.id}>
-                            <td><input type="text" value={ex.name} onChange={e => updateExtra(job.id, ex.id, 'name', e.target.value)} placeholder="Food, materials..." /></td>
-                            <td><input type="number" value={ex.amount || ''} onChange={e => updateExtra(job.id, ex.id, 'amount', e.target.value)} placeholder="0" /></td>
-                            <td><button className="btn-delete" onClick={() => removeExtra(job.id, ex.id)}>✕</button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <div className="table-footer job-footer">
-                  <strong>Labor: {fmt(jobLabor(job))}</strong>
-                  <strong>Extras: {fmt(jobExtras(job))}</strong>
-                  <strong>Job total: {fmt(jobLabor(job) + jobExtras(job))}</strong>
+            {payrollView === 'standard' && (
+              <>
+                <div className="job-header">
+                  <h3 className="sub-title" style={{ margin: 0 }}>Standard payroll — regular days, not tied to one job</h3>
+                  <button className="btn-add small" onClick={() => addWorker('standard')}>+ Worker</button>
                 </div>
+                {renderWorkerGrid('standard', (data.standardPayroll || { workers: [] }).workers)}
+                <div className="table-footer job-footer">
+                  <strong>Standard total: {fmt(standardTotal)}</strong>
+                </div>
+              </>
+            )}
+
+            {typeof payrollView === 'number' && (() => {
+              const job = data.jobs.find(j => j.id === payrollView);
+              if (!job) return null;
+              return (
+                <div className="job-block">
+                  <div className="job-header">
+                    <input className="job-name" type="text" value={job.name} onChange={e => updateJobName(job.id, e.target.value)} placeholder="Job name" />
+                    <div className="job-header-actions">
+                      <button className="btn-add small" onClick={() => addWorker(job.id)}>+ Worker</button>
+                      <button className="btn-add small" onClick={() => addExtra(job.id)}>+ Extra</button>
+                      <button className="btn-delete" onClick={() => removeJob(job.id)}>✕ Delete job</button>
+                    </div>
+                  </div>
+
+                  {renderWorkerGrid(job.id, job.workers)}
+
+                  {job.extras.length > 0 && (
+                    <div className="spreadsheet extras-table">
+                      <table className="data-table">
+                        <thead>
+                          <tr><th>Extra</th><th className="col-amount">Amount</th><th className="col-x"></th></tr>
+                        </thead>
+                        <tbody>
+                          {job.extras.map(ex => (
+                            <tr key={ex.id}>
+                              <td><input type="text" value={ex.name} onChange={e => updateExtra(job.id, ex.id, 'name', e.target.value)} placeholder="Food, materials..." /></td>
+                              <td><input type="number" value={ex.amount || ''} onChange={e => updateExtra(job.id, ex.id, 'amount', e.target.value)} placeholder="0" /></td>
+                              <td><button className="btn-delete" onClick={() => removeExtra(job.id, ex.id)}>✕</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="table-footer job-footer">
+                    <strong>Labor: {fmt(jobLabor(job))}</strong>
+                    <strong>Extras: {fmt(jobExtras(job))}</strong>
+                    <strong>Job total: {fmt(jobLabor(job) + jobExtras(job))}</strong>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ============ 0% CARDS ============ */}
+        {tab === 'zero' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <h2>0% credit cards</h2>
+              <button className="btn-add" onClick={() => addToList('zeroCards', { name: '', balance: 0, limit: 0, promoEnd: '', notes: '' })}>+ Add card</button>
+            </div>
+            <p className="subtitle">No interest for now — watch the promo end dates</p>
+            <div className="spreadsheet">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Card</th><th className="col-amount">Balance</th><th className="col-amount">Limit</th><th className="col-amount">Used</th><th className="col-date">Promo ends</th><th>Notes</th><th className="col-x"></th></tr>
+                </thead>
+                <tbody>
+                  {(data.zeroCards || []).map(z => {
+                    const util = z.limit > 0 ? Math.round((z.balance / z.limit) * 100) : null;
+                    return (
+                      <tr key={z.id}>
+                        <td><input type="text" value={z.name} onChange={e => updateList('zeroCards', z.id, 'name', e.target.value)} placeholder="Card" /></td>
+                        <td><input type="number" value={z.balance || ''} onChange={e => updateList('zeroCards', z.id, 'balance', e.target.value, true)} placeholder="0" /></td>
+                        <td><input type="number" value={z.limit || ''} onChange={e => updateList('zeroCards', z.id, 'limit', e.target.value, true)} placeholder="0" /></td>
+                        <td className={util != null && util > 90 ? 'spent' : 'utilization'}>{util != null ? util + '%' : '—'}</td>
+                        <td><input type="text" value={z.promoEnd || ''} onChange={e => updateList('zeroCards', z.id, 'promoEnd', e.target.value)} placeholder="3/2027" /></td>
+                        <td><input type="text" value={z.notes || ''} onChange={e => updateList('zeroCards', z.id, 'notes', e.target.value)} placeholder="" /></td>
+                        <td><button className="btn-delete" onClick={() => removeFromList('zeroCards', z.id)}>✕</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div className="table-footer">
+                <strong>Total 0% balance: {fmt(totalZero)}</strong>
+                <strong>Total limit: {fmt((data.zeroCards || []).reduce((s, z) => s + (z.limit || 0), 0))}</strong>
               </div>
-            ))}
+            </div>
+          </div>
+        )}
+
+        {/* ============ CHINA ORDER ============ */}
+        {tab === 'china' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <h2>China order</h2>
+              <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
+            </div>
+            <p className="subtitle">Track the order line by line — cost, deposits paid, what's left</p>
+            <div className="spreadsheet">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Item</th><th className="col-amount">Total cost</th><th className="col-amount">Paid so far</th><th className="col-amount">Remaining</th><th className="col-date">Status</th><th>Notes</th><th className="col-x"></th></tr>
+                </thead>
+                <tbody>
+                  {(data.chinaOrder || []).map(c => (
+                    <tr key={c.id}>
+                      <td><input type="text" value={c.name} onChange={e => updateList('chinaOrder', c.id, 'name', e.target.value)} placeholder="Item / shipment" /></td>
+                      <td><input type="number" value={c.amount || ''} onChange={e => updateList('chinaOrder', c.id, 'amount', e.target.value, true)} placeholder="0" /></td>
+                      <td><input type="number" value={c.paid || ''} onChange={e => updateList('chinaOrder', c.id, 'paid', e.target.value, true)} placeholder="0" /></td>
+                      <td className={(c.amount || 0) - (c.paid || 0) > 0 ? 'spent' : 'daily'}>{fmt((c.amount || 0) - (c.paid || 0))}</td>
+                      <td>
+                        <select value={c.status || 'quoted'} onChange={e => updateList('chinaOrder', c.id, 'status', e.target.value)}>
+                          <option value="quoted">Quoted</option>
+                          <option value="ordered">Ordered</option>
+                          <option value="production">In production</option>
+                          <option value="shipped">Shipped</option>
+                          <option value="customs">Customs</option>
+                          <option value="received">Received</option>
+                        </select>
+                      </td>
+                      <td><input type="text" value={c.notes || ''} onChange={e => updateList('chinaOrder', c.id, 'notes', e.target.value)} placeholder="" /></td>
+                      <td><button className="btn-delete" onClick={() => removeFromList('chinaOrder', c.id)}>✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="table-footer">
+                <strong>Order total: {fmt(chinaTotal)}</strong>
+                <strong>Paid: {fmt(chinaPaid)}</strong>
+                <strong>Still owed: {fmt(chinaTotal - chinaPaid)}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============ PERSONAL PURCHASES ============ */}
+        {tab === 'purchases' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <h2>Personal purchases</h2>
+              <button className="btn-add" onClick={() => addToList('personalPurchases', { name: '', amount: 0, date: '', status: 'planned', notes: '' })}>+ Add purchase</button>
+            </div>
+            <p className="subtitle">Planned purchases hit your Projection on their date — mark bought when done</p>
+
+            <div className="projection-info">
+              <div className="info-box">
+                <div className="info-label">Planned (upcoming)</div>
+                <div className="info-value">{fmt(purchasesPlanned)}</div>
+              </div>
+              <div className="info-box">
+                <div className="info-label">Bought (tracked)</div>
+                <div className="info-value">{fmt(purchasesBought)}</div>
+              </div>
+              <div className="info-box">
+                <div className="info-label">Cash after planned</div>
+                <div className="info-value">{fmt(netNow - purchasesPlanned)}</div>
+              </div>
+            </div>
+
+            <div className="spreadsheet">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Purchase</th><th className="col-amount">Amount</th><th className="col-date">Date</th><th className="col-date">Status</th><th>Notes</th><th className="col-x"></th></tr>
+                </thead>
+                <tbody>
+                  {(data.personalPurchases || []).map(p => (
+                    <tr key={p.id}>
+                      <td><input type="text" value={p.name} onChange={e => updateList('personalPurchases', p.id, 'name', e.target.value)} placeholder="What" /></td>
+                      <td><input type="number" value={p.amount || ''} onChange={e => updateList('personalPurchases', p.id, 'amount', e.target.value, true)} placeholder="0" /></td>
+                      <td><input type="date" value={p.date || ''} onChange={e => updateList('personalPurchases', p.id, 'date', e.target.value)} /></td>
+                      <td>
+                        <select value={p.status || 'planned'} onChange={e => updateList('personalPurchases', p.id, 'status', e.target.value)}>
+                          <option value="planned">Planned</option>
+                          <option value="bought">Bought</option>
+                          <option value="skipped">Skipped</option>
+                        </select>
+                      </td>
+                      <td><input type="text" value={p.notes || ''} onChange={e => updateList('personalPurchases', p.id, 'notes', e.target.value)} placeholder="" /></td>
+                      <td><button className="btn-delete" onClick={() => removeFromList('personalPurchases', p.id)}>✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="table-footer">
+                <strong>Planned: {fmt(purchasesPlanned)}</strong>
+                <strong>Bought: {fmt(purchasesBought)}</strong>
+              </div>
+            </div>
           </div>
         )}
 
@@ -802,7 +1200,7 @@ export default function DashboardPage() {
               <h2>Big debts</h2>
               <button className="btn-add" onClick={() => addToList('debts', { name: '', amount: 0, limit: 0, notes: '' })}>+ Add debt</button>
             </div>
-            <p className="subtitle">Long-term: family, 0% cards, mortgage — not due today, but real</p>
+            <p className="subtitle">Long-term: family, travel, mortgage — 0% cards have their own tab now</p>
             <div className="spreadsheet">
               <table className="data-table">
                 <thead>
@@ -833,7 +1231,7 @@ export default function DashboardPage() {
         {tab === 'projection' && (
           <div className="tab-content">
             <h2>Cash projection</h2>
-            <p className="subtitle">Daily burn ({fmt2(dailyBurn)}/day from fixed expenses) plus card due dates hitting on schedule</p>
+            <p className="subtitle">Daily burn ({fmt2(dailyBurn)}/day) plus card dues and planned purchases hitting on their dates</p>
 
             <div className="projection-info">
               <div className="info-box">
@@ -874,6 +1272,38 @@ export default function DashboardPage() {
                 </tbody>
               </table>
               <p className="projection-note">Doesn't count incoming AR ({fmt(totalIncoming)}) — collect Royal Oaks and this whole table shifts up.</p>
+            </div>
+          </div>
+        )}
+
+        {/* ============ CUSTOM TABS ============ */}
+        {activeCustom && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <input className="job-name" type="text" value={activeCustom.name} onChange={e => updateCustomTab(activeCustom.id, e.target.value)} placeholder="Tab name" />
+              <div className="job-header-actions">
+                <button className="btn-add" onClick={() => addCustomRow(activeCustom.id)}>+ Add row</button>
+                <button className="btn-delete" onClick={() => removeCustomTab(activeCustom.id)}>✕ Delete tab</button>
+              </div>
+            </div>
+            <div className="spreadsheet">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Name</th><th className="col-amount">Amount</th><th className="col-date">Date</th><th>Notes</th><th className="col-x"></th></tr>
+                </thead>
+                <tbody>
+                  {activeCustom.rows.map(r => (
+                    <tr key={r.id}>
+                      <td><input type="text" value={r.name} onChange={e => updateCustomRow(activeCustom.id, r.id, 'name', e.target.value)} placeholder="" /></td>
+                      <td><input type="number" value={r.amount || ''} onChange={e => updateCustomRow(activeCustom.id, r.id, 'amount', e.target.value, true)} placeholder="0" /></td>
+                      <td><input type="text" value={r.date || ''} onChange={e => updateCustomRow(activeCustom.id, r.id, 'date', e.target.value)} placeholder="" /></td>
+                      <td><input type="text" value={r.notes || ''} onChange={e => updateCustomRow(activeCustom.id, r.id, 'notes', e.target.value)} placeholder="" /></td>
+                      <td><button className="btn-delete" onClick={() => removeCustomRow(activeCustom.id, r.id)}>✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="table-footer"><strong>Total: {fmt(activeCustom.rows.reduce((s, r) => s + (r.amount || 0), 0))}</strong></div>
             </div>
           </div>
         )}
