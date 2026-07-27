@@ -828,6 +828,34 @@
   text-align: center;
 }
 
+.pw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.pw-form input {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #ffffff;
+  font-size: 12px;
+  width: 100%;
+}
+
+.pw-form input:focus {
+  outline: none;
+  border-color: #00d9ff;
+}
+
+.pw-msg {
+  font-size: 11px;
+  color: #06ffa5;
+  text-align: center;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }

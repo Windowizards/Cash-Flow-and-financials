@@ -153,6 +153,10 @@ export default function DashboardPage() {
   const [linkSent, setLinkSent] = useState(false);
   const [authErr, setAuthErr] = useState('');
   const [syncState, setSyncState] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPwForm, setShowPwForm] = useState(false);
+  const [newPw, setNewPw] = useState('');
+  const [pwMsg, setPwMsg] = useState('');
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetMsg, setSheetMsg] = useState('');
 
@@ -217,15 +221,45 @@ export default function DashboardPage() {
   }, [data, loaded, session]);
 
   const sendLink = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setAuthErr('');
-    if (!email.trim()) return;
+    if (!email.trim()) { setAuthErr('Enter your email first'); return; }
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: window.location.origin + '/dashboard' },
     });
     if (error) setAuthErr(error.message);
     else setLinkSent(true);
+  };
+
+  const signInPw = async (e) => {
+    e.preventDefault();
+    setAuthErr('');
+    if (!email.trim() || !password) { setAuthErr('Enter email and password'); return; }
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      if (/invalid login credentials/i.test(error.message)) {
+        setAuthErr('Wrong password — or no password set yet. Use the email link below, then set a password in the sidebar.');
+      } else {
+        setAuthErr(error.message);
+      }
+    }
+  };
+
+  const savePassword = async (e) => {
+    e.preventDefault();
+    setPwMsg('');
+    if (!newPw || newPw.length < 8) { setPwMsg('Password needs at least 8 characters'); return; }
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    if (error) setPwMsg(error.message);
+    else {
+      setPwMsg('Password saved ✓ — use it to sign in from now on');
+      setNewPw('');
+      setTimeout(() => { setShowPwForm(false); setPwMsg(''); }, 3000);
+    }
   };
 
   const signOut = async () => {
@@ -593,17 +627,19 @@ export default function DashboardPage() {
           <h1 className="auth-title">CyberDollar</h1>
           {linkSent ? (
             <>
-              <p className="auth-text">Check your email — sign-in link sent to <strong>{email}</strong>. Click it and you'll land back here, signed in.</p>
-              <button className="btn-add" onClick={() => setLinkSent(false)}>Use a different email</button>
+              <p className="auth-text">Check your email — sign-in link sent to <strong>{email}</strong>. Click it and you'll land back here, signed in. Once you're in, set a password in the sidebar so next time is instant.</p>
+              <button className="btn-add" onClick={() => setLinkSent(false)}>Back</button>
             </>
           ) : (
             <>
-              <p className="auth-text">Sign in to sync your numbers across all your devices. No password — we email you a link.</p>
-              <form onSubmit={sendLink} className="auth-form">
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required />
-                <button type="submit" className="btn-add">Email me a sign-in link</button>
+              <p className="auth-text">Sign in once — you stay signed in on this device until you sign out.</p>
+              <form onSubmit={signInPw} className="auth-form">
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="email" required />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
+                <button type="submit" className="btn-add">Sign in</button>
               </form>
               {authErr && <p className="auth-error">{authErr}</p>}
+              <button className="auth-skip" onClick={() => sendLink()}>No password yet / forgot? Email me a sign-in link</button>
               <button className="auth-skip" onClick={() => setLocalOnly(true)}>Skip — use this device only</button>
             </>
           )}
@@ -694,6 +730,21 @@ export default function DashboardPage() {
                 {syncState === 'saving' ? 'Saving…' : syncState === 'error' ? 'Sync error' : 'Synced ✓'}
               </div>
               <div className="user-email">{session.user.email}</div>
+              {showPwForm ? (
+                <form onSubmit={savePassword} className="pw-form">
+                  <input
+                    type="password"
+                    value={newPw}
+                    onChange={e => setNewPw(e.target.value)}
+                    placeholder="New password (8+ chars)"
+                    autoComplete="new-password"
+                  />
+                  <button type="submit" className="btn-add small">Save password</button>
+                  {pwMsg && <div className="pw-msg">{pwMsg}</div>}
+                </form>
+              ) : (
+                <button className="auth-skip" onClick={() => setShowPwForm(true)}>Set password</button>
+              )}
               <button className="auth-skip" onClick={signOut}>Sign out</button>
             </>
           ) : (
