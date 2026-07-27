@@ -73,7 +73,7 @@ const SEED = {
       id: 1,
       name: 'Royal Oaks',
       workers: [
-        { id: 1, name: 'Stu', rate: 300, hours: [0, 1, 0, 0, 0, 0, 0, 0, 0] },
+        { id: 1, name: 'Stu', rate: 0, dayRate: 300, hours: [0, 1, 0, 0, 0, 0, 0, 0, 0] },
         { id: 2, name: 'Luke', rate: 30, hours: [8, 8, 8, 0, 0, 0, 0, 0, 0] },
         { id: 3, name: 'Julio', rate: 25, hours: [0, 8, 8, 0, 0, 0, 0, 0, 0] },
         { id: 4, name: 'Perez', rate: 25, hours: [0, 8, 8, 0, 0, 0, 0, 0, 0] },
@@ -90,7 +90,7 @@ const SEED = {
   ],
   standardPayroll: {
     workers: [
-      { id: 1, name: 'Stu', rate: 300, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      { id: 1, name: 'Stu', rate: 0, dayRate: 300, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
       { id: 2, name: 'Luke', rate: 30, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
       { id: 3, name: 'Julio', rate: 25, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
       { id: 4, name: 'Perez', rate: 25, hours: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
@@ -154,7 +154,8 @@ function nextDue(str) {
   return d;
 }
 
-const workerTotal = (w) => (w.rate || 0) * w.hours.reduce((a, b) => a + (b || 0), 0);
+const daysWorked = (w) => w.hours.filter(h => (h || 0) > 0).length;
+const workerTotal = (w) => (w.rate || 0) * w.hours.reduce((a, b) => a + (b || 0), 0) + (w.dayRate || 0) * daysWorked(w);
 const gridTotal = (workers) => workers.reduce((s, w) => s + workerTotal(w), 0);
 
 const DEFAULT_SCHEMAS = {
@@ -645,6 +646,24 @@ export default function DashboardPage() {
         /mortgage/i.test(row.name || '') && !row.due ? { ...row, due: '10/1' } : row
       );
       return { ...d, mortgageRefiDateSet: true, debts };
+    });
+  }, [loaded]);
+
+  // One-time: workers paying $100+/hr were really on a day rate (e.g. Stu at
+  // $300) — move that number into the new Day rate field instead.
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.dayRateFix) return d;
+      const fixWorkers = ws => ws.map(w =>
+        (w.rate || 0) >= 100 && !w.dayRate ? { ...w, dayRate: w.rate, rate: 0 } : w
+      );
+      return {
+        ...d,
+        dayRateFix: true,
+        standardPayroll: { ...(d.standardPayroll || { workers: [] }), workers: fixWorkers((d.standardPayroll || { workers: [] }).workers) },
+        jobs: d.jobs.map(j => ({ ...j, workers: fixWorkers(j.workers) })),
+      };
     });
   }, [loaded]);
 
@@ -1237,7 +1256,8 @@ export default function DashboardPage() {
   };
 
   const updateWorker = (target, workerId, field, value) => {
-    setWorkers(target, ws => ws.map(w => w.id === workerId ? { ...w, [field]: field === 'rate' ? (parseFloat(value) || 0) : value } : w));
+    const numericFields = field === 'rate' || field === 'dayRate';
+    setWorkers(target, ws => ws.map(w => w.id === workerId ? { ...w, [field]: numericFields ? (parseFloat(value) || 0) : value } : w));
   };
   const updateHours = (target, workerId, dayIdx, value) => {
     setWorkers(target, ws => ws.map(w => {
@@ -1248,7 +1268,7 @@ export default function DashboardPage() {
     }));
   };
   const addWorker = (target) => {
-    setWorkers(target, ws => [...ws, { id: Date.now(), name: '', rate: 0, hours: Array(NUM_DAYS).fill(0), extra: {} }]);
+    setWorkers(target, ws => [...ws, { id: Date.now(), name: '', rate: 0, dayRate: 0, hours: Array(NUM_DAYS).fill(0), extra: {} }]);
   };
   const removeWorker = (target, workerId) => {
     setWorkers(target, ws => ws.filter(w => w.id !== workerId));
@@ -1658,7 +1678,8 @@ export default function DashboardPage() {
           <thead>
             <tr>
               <th className="pin-1">Worker</th>
-              <th className="col-rate pin-2">Rate</th>
+              <th className="col-rate pin-2" title="Multiplied by total hours logged">Hourly rate</th>
+              <th className="col-rate pin-3" title="Multiplied by number of days with any hours logged">Day rate</th>
               {Array.from({ length: NUM_DAYS }, (_, i) => <th key={i} className="col-hr">D{i + 1}</th>)}
               {extraCols.map(col => (
                 <th key={col.key}>
@@ -1684,7 +1705,8 @@ export default function DashboardPage() {
             {workers.map(w => (
               <tr key={w.id}>
                 <td className="pin-1"><input type="text" value={w.name} onChange={e => updateWorker(target, w.id, 'name', e.target.value)} placeholder="Name" /></td>
-                <td className="pin-2"><input type="number" value={w.rate || ''} onChange={e => updateWorker(target, w.id, 'rate', e.target.value)} placeholder="0" /></td>
+                <td className="pin-2"><input type="number" value={w.rate || ''} onChange={e => updateWorker(target, w.id, 'rate', e.target.value)} placeholder="$/hr" /></td>
+                <td className="pin-3"><input type="number" value={w.dayRate || ''} onChange={e => updateWorker(target, w.id, 'dayRate', e.target.value)} placeholder="$/day" /></td>
                 {w.hours.map((h, idx) => (
                   <td key={idx}><input className="hr-input" type="number" value={h || ''} onChange={e => updateHours(target, w.id, idx, e.target.value)} placeholder="·" /></td>
                 ))}
@@ -1705,6 +1727,7 @@ export default function DashboardPage() {
               <tr className="totals-row">
                 <td className="pin-1">Day totals (hrs)</td>
                 <td className="pin-2"></td>
+                <td className="pin-3"></td>
                 {dayHourTotals.map((t, i) => <td key={i} className="daily">{t || ''}</td>)}
                 {extraCols.map(col => <td key={col.key}></td>)}
                 <td className="balance">{fmt(gridTotal(workers))}</td>

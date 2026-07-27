@@ -570,7 +570,7 @@
 .col-amount { width: 130px; }
 .col-date { width: 130px; }
 .col-x { width: 52px; }
-.col-rate { width: 80px; }
+.col-rate { width: 110px; min-width: 110px; }
 .col-hr { width: 56px; }
 
 .job-block {
@@ -633,20 +633,23 @@
   min-width: 900px;
 }
 
-/* Worker + Rate stay pinned while you scroll through the day columns —
-   otherwise Rate scrolls off-screen and is easy to lose track of. */
+/* Worker + both rate columns stay pinned while you scroll through the day
+   columns — otherwise they scroll off-screen and are easy to lose track of. */
 .payroll-table .pin-1,
-.payroll-table .pin-2 {
+.payroll-table .pin-2,
+.payroll-table .pin-3 {
   position: sticky;
   background: #171b32;
   z-index: 2;
 }
 
 .payroll-table .pin-1 { left: 0; width: 140px; min-width: 140px; }
-.payroll-table .pin-2 { left: 140px; }
+.payroll-table .pin-2 { left: 140px; width: 110px; min-width: 110px; }
+.payroll-table .pin-3 { left: 250px; width: 110px; min-width: 110px; box-shadow: 4px 0 8px -4px rgba(0, 0, 0, 0.4); }
 
 .payroll-table th.pin-1,
-.payroll-table th.pin-2 {
+.payroll-table th.pin-2,
+.payroll-table th.pin-3 {
   z-index: 3;
 }
 
