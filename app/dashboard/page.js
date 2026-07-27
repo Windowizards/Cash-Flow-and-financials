@@ -181,7 +181,7 @@ const DEFAULT_SCHEMAS = {
   monthly: [
     { key: 'name', label: 'Expense', type: 'text', core: true },
     { key: 'amount', label: 'Monthly', type: 'number', core: true },
-    { key: 'dueDay', label: 'Due day', type: 'number', core: true },
+    { key: 'dueDay', label: 'Due day', type: 'number', core: true, noSum: true },
     { key: 'type', label: 'Tag', type: 'select', options: ['business', 'personal'], core: true },
   ],
   zeroCards: [
@@ -196,7 +196,7 @@ const DEFAULT_SCHEMAS = {
     { key: 'name', label: 'Item', type: 'text', core: true },
     { key: 'contact', label: 'Contact', type: 'text' },
     { key: 'amount', label: 'Total cost', type: 'number', core: true },
-    { key: 'paid', label: 'Paid so far', type: 'number', core: true },
+    { key: 'paid', label: 'Paid so far', type: 'number', core: true, pctOf: 'amount' },
     { key: 'status', label: 'Status', type: 'select', options: ['quoted', 'ordered', 'production', 'shipped', 'customs', 'received'], core: true },
     { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'notes', label: 'Notes', type: 'text' },
@@ -226,7 +226,7 @@ const DEFAULT_SCHEMAS = {
   goals: [
     { key: 'name', label: 'Goal', type: 'text', core: true },
     { key: 'target', label: 'Target', type: 'number', core: true },
-    { key: 'saved', label: 'Saved so far', type: 'number', core: true },
+    { key: 'saved', label: 'Saved so far', type: 'number', core: true, pctOf: 'target' },
     { key: 'date', label: 'Target date', type: 'date' },
     { key: 'link', label: 'Link', type: 'link' },
     { key: 'notes', label: 'Notes', type: 'text' },
@@ -253,13 +253,47 @@ const CUSTOM_TAB_COLUMNS = [
 ];
 
 function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDelRow, onSchemaChange, footerExtras = [], linkTargets = [], onJump }) {
+  const [q, setQ] = useState('');
   const addColumn = () => onSchemaChange([...columns, { key: 'c_' + Date.now(), label: 'New column', type: 'text' }]);
   const renameColumn = (key, label) => onSchemaChange(columns.map(c => c.key === key ? { ...c, label } : c));
   const retypeColumn = (key, type) => onSchemaChange(columns.map(c => c.key === key ? { ...c, type } : c));
   const removeColumn = (key) => onSchemaChange(columns.filter(c => c.key !== key));
 
+  const needle = q.trim().toLowerCase();
+  const shown = needle
+    ? rows.filter(r => columns.some(c => String(r[c.key] == null ? '' : r[c.key]).toLowerCase().includes(needle)))
+    : rows;
+
+  const confirmDel = (row) => {
+    const label = row.name || '';
+    const hasData = label || (parseFloat(row.amount) || 0) > 0 || (parseFloat(row.balance) || 0) > 0;
+    if (!hasData || window.confirm(`Delete ${label ? '"' + label + '"' : 'this row'}? This can't be undone.`)) {
+      onDelRow(row.id);
+    }
+  };
+
+  // Number cells: typing "30%" in a column with pctOf converts to 30% of that
+  // row's base column (e.g. Paid so far = 30% of Total cost), stored as dollars.
+  const numChange = (row, col, raw) => {
+    if (col.pctOf && /%\s*$/.test(raw)) {
+      const pct = parseFloat(raw);
+      const base = parseFloat(row[col.pctOf]) || 0;
+      if (!isNaN(pct)) {
+        onCell(row.id, col.key, String(Math.round((pct / 100) * base * 100) / 100), true);
+        return;
+      }
+    }
+    onCell(row.id, col.key, raw.replace(/[$,]/g, ''), true);
+  };
+
   return (
     <div className="spreadsheet">
+      {rows.length > 5 && (
+        <div className="table-search">
+          <input type="text" value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 Type to filter rows…" />
+          {q && <button className="auth-skip" onClick={() => setQ('')}>clear ({shown.length}/{rows.length})</button>}
+        </div>
+      )}
       <div className="payroll-scroll">
         <table className="data-table">
           <thead>
@@ -288,7 +322,7 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
             </tr>
           </thead>
           <tbody>
-            {rows.map(row => (
+            {shown.map(row => (
               <tr key={row.id}>
                 {columns.map(col => (
                   <td key={col.key}>
@@ -306,12 +340,20 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
                       <select value={row[col.key] || (col.options && col.options[0]) || ''} onChange={e => onCell(row.id, col.key, e.target.value, false)}>
                         {(col.options || []).map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
+                    ) : col.type === 'number' ? (
+                      <input
+                        type={col.pctOf ? 'text' : 'number'}
+                        inputMode="decimal"
+                        value={row[col.key] === 0 || row[col.key] == null ? '' : row[col.key]}
+                        onChange={e => numChange(row, col, e.target.value)}
+                        placeholder={col.pctOf ? '0 or 30%' : '0'}
+                        title={col.pctOf ? 'Type a dollar amount, or a percentage like 30% to auto-calculate' : ''}
+                      />
                     ) : (
                       <input
-                        type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
-                        value={row[col.key] === 0 || row[col.key] == null ? (row[col.key] === 0 ? '' : '') : row[col.key]}
-                        onChange={e => onCell(row.id, col.key, e.target.value, col.type === 'number')}
-                        placeholder={col.type === 'number' ? '0' : ''}
+                        type={col.type === 'date' ? 'date' : 'text'}
+                        value={row[col.key] == null ? '' : row[col.key]}
+                        onChange={e => onCell(row.id, col.key, e.target.value, false)}
                       />
                     )}
                   </td>
@@ -319,7 +361,7 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
                 {computed.map(c => <td key={c.label} className={c.className ? c.className(row) : 'daily'}>{c.fn(row)}</td>)}
                 <td className="row-actions">
                   {rowActions && rowActions(row)}
-                  <button className="btn-delete" onClick={() => onDelRow(row.id)}>✕</button>
+                  <button className="btn-delete" onClick={() => confirmDel(row)}>✕</button>
                 </td>
               </tr>
             ))}
@@ -327,10 +369,11 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
         </table>
       </div>
       <div className="table-footer">
-        {columns.filter(c => c.type === 'number').map(c => (
-          <strong key={c.key}>{c.label}: {fmt(rows.reduce((s, r) => s + (parseFloat(r[c.key]) || 0), 0))}</strong>
+        {needle && <strong className="g-mid">filtered totals ↓</strong>}
+        {columns.filter(c => c.type === 'number' && !c.noSum).map(c => (
+          <strong key={c.key}>{c.label}: {fmt(shown.reduce((s, r) => s + (parseFloat(r[c.key]) || 0), 0))}</strong>
         ))}
-        {footerExtras.map((f, i) => <strong key={i}>{f}</strong>)}
+        {!needle && footerExtras.map((f, i) => <strong key={i}>{f}</strong>)}
       </div>
     </div>
   );
@@ -815,6 +858,14 @@ export default function DashboardPage() {
   };
 
   const paidFull = (listKey, row) => {
+    const label = row.name || 'this';
+    const moving = listKey === 'chinaOrder'
+      ? Math.max(0, (row.amount || 0) - (row.paid || 0))
+      : listKey === 'zeroCards' ? (row.balance || 0) : (row.amount || 0);
+    const msg = listKey === 'incoming'
+      ? `Collect ${fmt(moving)} from ${label}? Adds to your first cash account.`
+      : `Mark ${label} paid? Subtracts ${fmt(moving)} from your first cash account.`;
+    if (!window.confirm(msg)) return;
     setData(d => {
       const name = row.name || 'item';
       if (listKey === 'incoming') {
@@ -1026,7 +1077,8 @@ export default function DashboardPage() {
     }));
   };
   const addToList = (key, blank) => {
-    setData(d => ({ ...d, [key]: [...(d[key] || []), { ...blank, id: Date.now() }] }));
+    // New rows go on top so you never hunt for the empty row on long tables
+    setData(d => ({ ...d, [key]: [{ ...blank, id: Date.now() }, ...(d[key] || [])] }));
   };
   const removeFromList = (key, id) => {
     setData(d => ({ ...d, [key]: d[key].filter(row => row.id !== id) }));
@@ -1037,8 +1089,23 @@ export default function DashboardPage() {
     const saved = (data.schemas || {})[key];
     const def = DEFAULT_SCHEMAS[key];
     if (!saved) return def;
+    // Overlay structural flags from defaults (sums, % entry, dropdown options)
+    // onto saved columns so improvements reach customized tables — labels and
+    // user-added columns stay exactly as the user set them.
+    const overlaid = saved.map(c => {
+      const dc = def.find(x => x.key === c.key);
+      if (!dc) return c;
+      return {
+        ...c,
+        core: dc.core,
+        noSum: dc.noSum,
+        pctOf: dc.pctOf,
+        options: dc.options || c.options,
+        type: (dc.type === 'select' || dc.type === 'link') ? dc.type : c.type,
+      };
+    });
     const missing = def.filter(c => !saved.some(s => s.key === c.key));
-    return missing.length ? [...saved, ...missing] : saved;
+    return missing.length ? [...overlaid, ...missing] : overlaid;
   };
   const setSchema = (key, cols) => setData(d => ({ ...d, schemas: { ...(d.schemas || {}), [key]: cols } }));
   const tabName = (key, def) => ((data.tabNames || {})[key]) || def;
@@ -1513,13 +1580,13 @@ export default function DashboardPage() {
               <h3>Everything at a glance</h3>
               <table className="glance-table">
                 <tbody>
-                  <tr onClick={() => setTab('cash')}><td>Cash on hand</td><td className="g-pos">{fmt(totalCash)}</td></tr>
-                  <tr onClick={() => setTab('incoming')}><td>Incoming (AR)</td><td className="g-pos">+{fmt(totalIncoming)}</td></tr>
-                  <tr onClick={() => setTab('owed')}><td>Owed now</td><td className="g-neg">−{fmt(totalOwed)}</td></tr>
-                  <tr onClick={() => setTab('zero')}><td>0% card balances</td><td className="g-neg">−{fmt(totalZero)}</td></tr>
-                  <tr onClick={() => setTab('china')}><td>China order remaining</td><td className="g-neg">−{fmt(chinaRemaining)}</td></tr>
-                  <tr onClick={() => setTab('debts')}><td>Big debts</td><td className="g-neg">−{fmt(totalDebts)}</td></tr>
-                  <tr onClick={() => setTab('monthly')}><td>Fixed monthly burn</td><td className="g-mid">{fmt(totalMonthly)}/mo</td></tr>
+                  <tr onClick={() => setTab('cash')}><td>Cash on hand{!cnt('cash') && <span className="day-offset"> (off)</span>}</td><td className="g-pos">{fmt(totalCash)}</td></tr>
+                  <tr onClick={() => setTab('incoming')}><td>Incoming (AR){!cnt('incoming') && <span className="day-offset"> (off)</span>}</td><td className="g-pos">+{fmt(totalIncoming)}</td></tr>
+                  <tr onClick={() => setTab('owed')}><td>Owed now{!cnt('owed') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(totalOwed)}</td></tr>
+                  <tr onClick={() => setTab('zero')}><td>0% card balances{!cnt('zero') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(totalZero)}</td></tr>
+                  <tr onClick={() => setTab('china')}><td>China order remaining{!cnt('china') && <span className="day-offset"> (off — own environment)</span>}</td><td className="g-neg">−{fmt(chinaRemaining)}</td></tr>
+                  <tr onClick={() => setTab('debts')}><td>Big debts{!cnt('debts') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(totalDebts)}</td></tr>
+                  <tr onClick={() => setTab('monthly')}><td>Fixed monthly burn{!cnt('monthly') && <span className="day-offset"> (off)</span>}</td><td className="g-mid">{fmt(totalMonthly)}/mo · {fmt2(totalMonthly / 30)}/day</td></tr>
                   <tr onClick={() => setTab('payroll')}><td>Payroll (all jobs + standard)</td><td className="g-mid">{fmt(standardTotal + allJobsTotal)}</td></tr>
                   <tr className="g-total"><td>True net</td><td className={trueNet >= 0 ? 'g-pos' : 'g-neg'}>{fmt(trueNet)}</td></tr>
                 </tbody>
@@ -1716,6 +1783,7 @@ export default function DashboardPage() {
                   linkTargets={linkTargets}
                   onJump={jumpTo}
                   rowActions={(row) => payButtons('monthly', row, 'Paid this month — subtracts from cash, bill stays for next month', 'Partial payment — enter how much')}
+                  footerExtras={[`Due per day: ${fmt2(rows.reduce((s, e) => s + (e.amount || 0), 0) / 30)}`]}
                 />
               </div>
             ))}
