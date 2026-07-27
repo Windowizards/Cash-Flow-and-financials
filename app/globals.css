@@ -5,113 +5,154 @@
 }
 
 :root {
-  --primary: #3b82f6;
-  --primary-dark: #1e40af;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --gray-50: #f9fafb;
-  --gray-100: #f3f4f6;
-  --gray-200: #e5e7eb;
-  --gray-300: #d1d5db;
-  --gray-400: #9ca3af;
-  --gray-500: #6b7280;
-  --gray-600: #4b5563;
-  --gray-700: #374151;
-  --gray-800: #1f2937;
-  --gray-900: #111827;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: var(--gray-900);
-    --bg-secondary: var(--gray-800);
-    --bg-tertiary: var(--gray-700);
-    --text: #f9fafb;
-    --text-secondary: var(--gray-400);
-    --border: var(--gray-700);
-  }
+  --primary: #00d9ff;
+  --primary-dark: #0099cc;
+  --secondary: #ff006e;
+  --tertiary: #8338ec;
+  --success: #06ffa5;
+  --warning: #ffbe0b;
+  --danger: #ff006e;
+  --dark-bg: #0a0e27;
+  --dark-surface: #1a1f3a;
+  --dark-surface-2: #252d48;
+  --dark-surface-3: #2d3757;
+  --text-primary: #ffffff;
+  --text-secondary: #a8b5d1;
+  --border-color: rgba(0, 217, 255, 0.1);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #ffffff;
-    --bg-secondary: var(--gray-50);
-    --bg-tertiary: var(--gray-100);
-    --text: var(--gray-900);
-    --text-secondary: var(--gray-600);
-    --border: var(--gray-200);
+    --primary: #0099cc;
+    --primary-dark: #006699;
+    --secondary: #ff006e;
+    --tertiary: #8338ec;
+    --success: #06b995;
+    --warning: #ffaa00;
+    --danger: #ff006e;
+    --dark-bg: #f5f7fa;
+    --dark-surface: #ffffff;
+    --dark-surface-2: #f0f3f7;
+    --dark-surface-3: #e8ecf1;
+    --text-primary: #0a0e27;
+    --text-secondary: #5a6b85;
+    --border-color: rgba(0, 153, 204, 0.15);
   }
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  line-height: 1.5;
-  transition: background-color 0.3s, color 0.3s;
+  background: linear-gradient(135deg, var(--dark-bg) 0%, #1a2847 50%, #0f1a35 100%);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Animated background particles */
+body::before {
+  content: '';
+  position: fixed;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  background:
+    radial-gradient(circle at 20% 50%, rgba(0, 217, 255, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(131, 56, 236, 0.1) 0%, transparent 50%);
+  animation: drift 20s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(50px, 50px); }
 }
 
 a {
   color: var(--primary);
   text-decoration: none;
+  transition: all 0.3s ease;
 }
 
 a:hover {
-  color: var(--primary-dark);
+  color: var(--tertiary);
+  text-shadow: 0 0 10px rgba(131, 56, 236, 0.3);
 }
 
 button {
   cursor: pointer;
   font-family: inherit;
   border: none;
-  border-radius: 6px;
-  padding: 10px 16px;
+  border-radius: 12px;
+  padding: 12px 24px;
   font-size: 14px;
-  transition: all 0.2s;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  letter-spacing: 0.5px;
 }
 
 button.primary {
-  background: var(--primary);
-  color: white;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--tertiary) 100%);
+  color: var(--dark-bg);
+  box-shadow: 0 8px 32px rgba(0, 217, 255, 0.2);
+  text-transform: uppercase;
 }
 
 button.primary:hover {
-  background: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 48px rgba(0, 217, 255, 0.4);
+}
+
+button.primary:active {
+  transform: translateY(0);
 }
 
 button.secondary {
-  background: var(--bg-tertiary);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(10px);
 }
 
 button.secondary:hover {
-  background: var(--border);
+  background: rgba(0, 217, 255, 0.1);
+  border-color: var(--primary);
 }
 
 input, textarea, select {
-  background: var(--bg-tertiary);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  font-family: inherit;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'Monaco', 'Courier New', monospace;
   font-size: 14px;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+input::placeholder, textarea::placeholder, select::placeholder {
+  color: var(--text-secondary);
 }
 
 input:focus, textarea:focus, select:focus {
   outline: none;
+  background: rgba(0, 217, 255, 0.05);
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 20px rgba(0, 217, 255, 0.2);
 }
 
 label {
   display: block;
-  font-size: 14px;
-  font-weight: 500;
-  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 label.checkbox {
@@ -137,22 +178,27 @@ input[type="checkbox"] {
 }
 
 .status-select {
-  background: var(--bg-tertiary);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
   font-size: 13px;
   cursor: pointer;
+  backdrop-filter: blur(10px);
 }
 
 .card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
 }
 
-.card.interactive:hover {
+.card:hover {
+  background: rgba(0, 217, 255, 0.05);
   border-color: var(--primary);
+  box-shadow: 0 8px 32px rgba(0, 217, 255, 0.1);
 }

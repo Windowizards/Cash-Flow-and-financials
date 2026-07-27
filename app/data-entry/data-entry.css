@@ -1,24 +1,43 @@
 .tabs {
   display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-  border-bottom: 2px solid var(--border);
+  gap: 12px;
+  margin-bottom: 32px;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 0;
+  overflow-x: auto;
 }
 
 .tab {
   background: none;
   border: none;
-  padding: 12px 16px;
+  padding: 16px 20px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text-secondary);
   cursor: pointer;
   border-bottom: 3px solid transparent;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: relative;
+  white-space: nowrap;
+}
+
+.tab::before {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary) 0%, var(--tertiary) 100%);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.3s ease;
 }
 
 .tab:hover {
-  color: var(--text);
+  color: var(--primary);
 }
 
 .tab.active {
@@ -26,92 +45,203 @@
   border-bottom-color: var(--primary);
 }
 
+.section {
+  background: linear-gradient(135deg, rgba(26, 31, 58, 0.4) 0%, rgba(42, 49, 82, 0.3) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 32px;
+  backdrop-filter: blur(20px);
+  margin-bottom: 32px;
+  transition: all 0.3s ease;
+}
+
+.section:hover {
+  border-color: rgba(0, 217, 255, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 217, 255, 0.1);
+}
+
+.section h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--tertiary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .table-wrapper {
   overflow-x: auto;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--bg-secondary);
+  background: linear-gradient(180deg, rgba(26, 31, 58, 0.2) 0%, rgba(42, 49, 82, 0.2) 100%);
+  font-size: 14px;
 }
 
 .data-table th {
-  background: var(--bg-tertiary);
-  padding: 12px;
+  background: linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(131, 56, 236, 0.15) 100%);
+  padding: 18px 16px;
   text-align: left;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--primary);
+  border-bottom: 2px solid var(--border-color);
   white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
 }
 
 .data-table td {
-  padding: 8px;
-  border: 1px solid var(--border);
-  height: 40px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0, 217, 255, 0.05);
+  height: 50px;
+  vertical-align: middle;
+}
+
+.data-table tbody tr {
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.data-table tbody tr::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 3px;
+  background: var(--primary);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 0.2s ease;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(0, 217, 255, 0.08);
+}
+
+.data-table tbody tr:hover::before {
+  transform: scaleY(1);
 }
 
 .data-table input,
 .data-table select {
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  color: var(--text);
-  font-family: inherit;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-primary);
+  font-family: 'Monaco', 'Courier New', monospace;
   font-size: 13px;
-  border-radius: 4px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.data-table input::placeholder {
+  color: rgba(168, 181, 209, 0.5);
 }
 
 .data-table input:focus,
 .data-table select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  background: rgba(0, 217, 255, 0.08);
+  box-shadow: 0 0 12px rgba(0, 217, 255, 0.2), inset 0 0 12px rgba(0, 217, 255, 0.05);
 }
 
 .delete-btn {
-  padding: 4px 8px;
-  font-size: 12px;
-  background: #fee2e2;
-  color: #dc2626;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  background: linear-gradient(135deg, rgba(255, 0, 110, 0.2) 0%, rgba(255, 0, 110, 0.1) 100%);
+  color: var(--danger);
+  border: 1px solid rgba(255, 0, 110, 0.3);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .delete-btn:hover {
-  background: #fecaca;
-  border-color: #f87171;
+  background: linear-gradient(135deg, rgba(255, 0, 110, 0.3) 0%, rgba(255, 0, 110, 0.2) 100%);
+  border-color: var(--danger);
+  box-shadow: 0 4px 16px rgba(255, 0, 110, 0.2);
+  transform: translateY(-2px);
+}
+
+.delete-btn:active {
+  transform: translateY(0);
 }
 
 .total-row {
-  padding: 16px;
-  background: var(--bg-tertiary);
-  border-radius: 6px;
+  padding: 20px 16px;
+  background: linear-gradient(135deg, rgba(0, 217, 255, 0.08) 0%, rgba(131, 56, 236, 0.08) 100%);
+  border-radius: 12px;
   text-align: right;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+  border: 1px solid var(--border-color);
+  font-family: 'Monaco', monospace;
+  letter-spacing: 0.5px;
 }
 
 @media (max-width: 768px) {
+  .section {
+    padding: 16px;
+  }
+
   .table-wrapper {
     font-size: 12px;
   }
 
   .data-table th,
   .data-table td {
-    padding: 6px 4px;
+    padding: 10px 8px;
+    height: auto;
   }
 
   .data-table input,
   .data-table select {
-    padding: 4px 4px;
+    padding: 6px 8px;
     font-size: 12px;
   }
+
+  .delete-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  .total-row {
+    padding: 16px 12px;
+    font-size: 14px;
+  }
 }
+
+/* Smooth transitions and animations */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.data-table tbody tr {
+  animation: slideInLeft 0.3s ease forwards;
+}
+
+.data-table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+.data-table tbody tr:nth-child(2) { animation-delay: 0.1s; }
+.data-table tbody tr:nth-child(3) { animation-delay: 0.15s; }
