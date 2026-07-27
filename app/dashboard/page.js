@@ -58,6 +58,15 @@ const SEED = {
     { id: 4, name: 'Kemper', amount: 1150, dueDay: 15, type: 'business' },
     { id: 5, name: 'Tesla', amount: 900, dueDay: 27, type: 'personal' },
     { id: 6, name: 'Corvette', amount: 1057, dueDay: 9, type: 'personal' },
+    { id: 7, name: 'Gas bill', amount: 100, dueDay: 1, type: 'personal' },
+    { id: 8, name: 'Electricity', amount: 600, dueDay: 1, type: 'personal' },
+    { id: 9, name: 'Water', amount: 300, dueDay: 1, type: 'personal' },
+    { id: 10, name: 'Trash', amount: 100, dueDay: 1, type: 'personal' },
+    { id: 11, name: 'Pool', amount: 120, dueDay: 1, type: 'personal' },
+    { id: 12, name: 'Gardener', amount: 250, dueDay: 1, type: 'personal' },
+    { id: 13, name: 'Vicki', amount: 0, dueDay: 1, type: 'personal' },
+    { id: 14, name: 'Groceries', amount: 750, dueDay: 1, type: 'personal' },
+    { id: 15, name: 'Geico insurance', amount: 1100, dueDay: 1, type: 'personal' },
   ],
   jobs: [
     {
@@ -336,6 +345,7 @@ export default function DashboardPage() {
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
   const [affordAmt, setAffordAmt] = useState('');
+  const [monthlyFilter, setMonthlyFilter] = useState('all');
   const [qbBusy, setQbBusy] = useState(false);
   const [qbMsg, setQbMsg] = useState('');
   const [qbPeriod, setQbPeriod] = useState('this_month');
@@ -364,6 +374,34 @@ export default function DashboardPage() {
       setQbMsg('QuickBooks connected ✓ — pick a period and load your reports');
     }
   }, [loaded, qbStaged]);
+
+  // One-time: import personal monthly expenses from the screenshot, if not already present
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.personalExpensesImported) return d;
+      const toAdd = [
+        { name: 'Gas bill', amount: 100 },
+        { name: 'Electricity', amount: 600 },
+        { name: 'Water', amount: 300 },
+        { name: 'Trash', amount: 100 },
+        { name: 'Pool', amount: 120 },
+        { name: 'Gardener', amount: 250 },
+        { name: 'Vicki', amount: 0 },
+        { name: 'Groceries', amount: 750 },
+        { name: 'Geico insurance', amount: 1100 },
+      ].filter(item => !d.monthly.some(m => (m.name || '').trim().toLowerCase() === item.name.toLowerCase()));
+      if (!toAdd.length) return { ...d, personalExpensesImported: true };
+      return {
+        ...d,
+        personalExpensesImported: true,
+        monthly: [
+          ...d.monthly,
+          ...toAdd.map((item, i) => ({ id: Date.now() + i, name: item.name, amount: item.amount, dueDay: 1, type: 'personal' })),
+        ],
+      };
+    });
+  }, [loaded]);
 
   // One-time: convert a custom "savings buckets" tab into Goals
   useEffect(() => {
@@ -1503,8 +1541,13 @@ export default function DashboardPage() {
               <input className="job-name title-input" value={tabName('monthly', 'Monthly')} onChange={e => setTabName('monthly', e.target.value)} />
               <div className="job-header-actions">
                 {countToggle('monthly')}
-                <button className="btn-add" onClick={() => addToList('monthly', { name: '', amount: 0, dueDay: 1, type: 'business' })}>+ Add expense</button>
               </div>
+            </div>
+
+            <div className="chip-bar">
+              <button className={`chip ${monthlyFilter === 'all' ? 'active' : ''}`} onClick={() => setMonthlyFilter('all')}>All</button>
+              <button className={`chip ${monthlyFilter === 'business' ? 'active' : ''}`} onClick={() => setMonthlyFilter('business')}>Business only</button>
+              <button className={`chip ${monthlyFilter === 'personal' ? 'active' : ''}`} onClick={() => setMonthlyFilter('personal')}>Personal only</button>
             </div>
 
             <div className="projection-info">
@@ -1522,9 +1565,14 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {[['business', 'Business', bizMonthly], ['personal', 'Personal', persMonthly]].map(([type, label, rows]) => (
+            {[['business', 'Business', bizMonthly], ['personal', 'Personal', persMonthly]]
+              .filter(([type]) => monthlyFilter === 'all' || monthlyFilter === type)
+              .map(([type, label, rows]) => (
               <div key={type} className="sub-section">
-                <h3 className="sub-title">{label} — {fmt(rows.reduce((s, e) => s + (e.amount || 0), 0))}/mo</h3>
+                <div className="sub-section-header">
+                  <h3 className="sub-title">{label} — {fmt(rows.reduce((s, e) => s + (e.amount || 0), 0))}/mo</h3>
+                  <button className="btn-add small" onClick={() => addToList('monthly', { name: '', amount: 0, dueDay: 1, type })}>+ Add {label.toLowerCase()} expense</button>
+                </div>
                 <EditableTable
                   columns={getSchema('monthly')}
                   rows={rows}
