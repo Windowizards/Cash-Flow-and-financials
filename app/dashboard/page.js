@@ -403,6 +403,56 @@ export default function DashboardPage() {
     });
   }, [loaded]);
 
+  // One-time: import China Shipments Tracker.xlsx into the China order tab
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.chinaOrderImported) return d;
+      const raw = [
+        ['C9 spool', 'China', '', '', 11576, 0, 'Ordered'],
+        ['Magnet C9 spool', 'China', '', 'Bruce', 2712, 0, 'Ordered'],
+        ['Zip wire 500 feet', 'China', '', '', 12750, 0, 'Ordered'],
+        ['15k male / 20k female / 10k middle', 'China', '', 'Bruce', 14750, 0, 'Ordered'],
+        ['End caps clear plastic', 'China', '', 'Bruce', 800, 0, 'Ordered'],
+        ['Stakes', 'China', '', 'Bruce', 1905, 0, 'Ordered'],
+        ['C9 orange', 'China', '', 'Bruce', 2950, 0, 'Ordered'],
+        ['C9 purple', 'China', '', 'Bruce', 2950, 0, 'Ordered'],
+        ['C9 green', 'China', '', 'Bruce', 5900, 0, 'Ordered'],
+        ['C9 red', 'China', '', 'Bruce', 5900, 0, 'Ordered'],
+        ['C9 WW 3000k', 'China', 'SD', 'Bruce', 17700, 0, 'Ordered'],
+        ['C9 5-multi', 'China', 'SD', 'Bruce', 7375, 0, 'Ordered'],
+        ['WW minis 3000k', 'China', 'SD', 'Bruce', 25000, 0, 'Ordered'],
+        ['Red minis', 'China', 'SD', 'Bruce', 3750, 0, 'Ordered'],
+        ['Green minis', 'China', 'SD', 'Bruce', 3750, 0, 'Ordered'],
+        ['Pure white minis', 'China', 'SD', 'Bruce', 3000, 0, 'Ordered'],
+        ['Multi-5 minis', 'China', 'SD', 'Bruce', 5000, 0, 'Ordered'],
+        ['Mechanical timer', 'China', 'SD', 'Bruce', 3400, 0, 'Ordered'],
+        ['Photocell timer', 'China', 'SD', 'Bruce', 880, 0, 'Ordered'],
+        ['Digital timer', 'China', 'SD', 'Bruce', 2725, 0, 'Ordered'],
+        ['Wreath 36" WW', 'China', 'SD', 'Bruce', 1764, 0, 'Ordered'],
+        ['Garland', 'China', 'SD', 'Bruce', 2230, 0, 'Ordered'],
+        ['Yard signs', 'China', '', 'Jolin', 5460, 5460, 'Paid'],
+        ['Brochures', 'China', '', 'Jolin', 2740, 2740, 'Paid'],
+        ['Samples (mini & C9)', 'China', '', 'Bruce', 450, 450, 'Paid'],
+        ['Clips', 'Halo clips', '', '', 11050, 0, 'Ordered'],
+      ];
+      const toAdd = raw
+        .filter(([name]) => !d.chinaOrder.some(c => (c.name || '').trim().toLowerCase() === name.toLowerCase()))
+        .map(([name, source, branch, contact, amount, paid, sheetStatus], i) => {
+          const bits = [];
+          if (source !== 'China') bits.push(`Source: ${source}`);
+          if (branch) bits.push(`Branch: ${branch}`);
+          if (contact) bits.push(`Contact: ${contact}`);
+          if (sheetStatus === 'Paid') bits.push('Paid in full');
+          return {
+            id: Date.now() + i, name, amount, paid,
+            status: 'ordered', bucket: 'business', notes: bits.join(' · '),
+          };
+        });
+      return { ...d, chinaOrderImported: true, chinaOrder: [...d.chinaOrder, ...toAdd] };
+    });
+  }, [loaded]);
+
   // One-time: convert a custom "savings buckets" tab into Goals
   useEffect(() => {
     if (!loaded) return;
