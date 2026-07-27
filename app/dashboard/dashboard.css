@@ -483,6 +483,133 @@
   }
 }
 
+.logo-mark {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(0, 217, 255, 0.15) 0%, rgba(131, 56, 236, 0.15) 100%);
+  border: 2px solid #00d9ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 800;
+  font-family: 'Monaco', monospace;
+  color: #00d9ff;
+  box-shadow: 0 0 24px rgba(0, 217, 255, 0.25);
+}
+
+.sub-section {
+  margin-bottom: 32px;
+}
+
+.sub-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #a8b5d1;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.col-amount { width: 130px; }
+.col-date { width: 130px; }
+.col-x { width: 52px; }
+.col-rate { width: 80px; }
+.col-hr { width: 56px; }
+
+.job-block {
+  margin-bottom: 40px;
+}
+
+.job-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.job-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #00d9ff;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(0, 217, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 240px;
+  font-family: inherit;
+}
+
+.job-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-add.small {
+  padding: 8px 14px;
+  font-size: 11px;
+}
+
+.payroll-scroll {
+  overflow-x: auto;
+}
+
+.payroll-table {
+  min-width: 900px;
+}
+
+.hr-input {
+  text-align: center;
+  padding: 6px 4px !important;
+}
+
+.extras-table {
+  margin-top: 12px;
+  max-width: 520px;
+}
+
+.job-footer {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 217, 255, 0.15);
+}
+
+.event-tag {
+  display: inline-block;
+  background: rgba(255, 190, 11, 0.12);
+  border: 1px solid rgba(255, 190, 11, 0.3);
+  color: #ffbe0b;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: 6px;
+  font-family: 'Monaco', monospace;
+}
+
+.event-none {
+  color: #5a6b85;
+  font-size: 12px;
+}
+
+.day-offset {
+  color: #5a6b85;
+  font-size: 11px;
+}
+
+.has-event {
+  background: rgba(255, 190, 11, 0.04);
+}
+
+.projection-note {
+  margin-top: 16px;
+  color: #a8b5d1;
+  font-size: 13px;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }
