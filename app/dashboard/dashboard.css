@@ -726,6 +726,60 @@
   flex-wrap: wrap;
 }
 
+.qb-period {
+  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.qb-report {
+  margin-bottom: 24px;
+}
+
+.qb-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-right: 8px;
+  border-bottom: 1px solid rgba(0, 217, 255, 0.06);
+  font-size: 14px;
+}
+
+.qb-row.section .qb-label {
+  color: #00d9ff;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.qb-row.total {
+  border-top: 1px solid rgba(0, 217, 255, 0.25);
+  border-bottom: none;
+}
+
+.qb-row.total .qb-label,
+.qb-row.total .qb-amt {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.qb-label {
+  color: #a8b5d1;
+}
+
+.qb-amt {
+  font-family: 'Monaco', monospace;
+  font-weight: 600;
+  color: #06ffa5;
+}
+
 .act-btn {
   background: rgba(6, 255, 165, 0.15);
   border: 1px solid rgba(6, 255, 165, 0.3);

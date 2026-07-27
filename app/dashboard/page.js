@@ -297,6 +297,34 @@ export default function DashboardPage() {
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
   const [affordAmt, setAffordAmt] = useState('');
+  const [qbBusy, setQbBusy] = useState(false);
+  const [qbMsg, setQbMsg] = useState('');
+  const [qbPeriod, setQbPeriod] = useState('this_month');
+  const [qbReports, setQbReports] = useState(null);
+  const [qbStaged, setQbStaged] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const m = window.location.hash.match(/qb=([^&]+)/);
+    if (m) {
+      try {
+        setQbStaged(JSON.parse(atob(decodeURIComponent(m[1]))));
+      } catch (e) { /* bad payload */ }
+      window.history.replaceState(null, '', window.location.pathname);
+    } else if (window.location.hash.includes('qberr')) {
+      setQbMsg('QuickBooks connection didn’t finish — try Connect again');
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (loaded && qbStaged) {
+      setData(d => ({ ...d, quickbooks: { refreshToken: qbStaged.refresh_token, realmId: qbStaged.realmId } }));
+      setQbStaged(null);
+      setTab('quickbooks');
+      setQbMsg('QuickBooks connected ✓ — pick a period and load your reports');
+    }
+  }, [loaded, qbStaged]);
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetMsg, setSheetMsg] = useState('');
 
@@ -826,6 +854,57 @@ export default function DashboardPage() {
     setSheetBusy(false);
   };
 
+  // ---------- QuickBooks reports ----------
+  const qbDates = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    switch (qbPeriod) {
+      case 'last_month': return { start: iso(new Date(y, m - 1, 1)), end: iso(new Date(y, m, 0)) };
+      case 'this_quarter': return { start: iso(new Date(y, Math.floor(m / 3) * 3, 1)), end: iso(now) };
+      case 'ytd': return { start: iso(new Date(y, 0, 1)), end: iso(now) };
+      case 'last_year': return { start: iso(new Date(y - 1, 0, 1)), end: iso(new Date(y - 1, 11, 31)) };
+      default: return { start: iso(new Date(y, m, 1)), end: iso(now) };
+    }
+  };
+
+  const loadQbReports = async () => {
+    if (!data.quickbooks) return;
+    setQbBusy(true);
+    setQbMsg('');
+    try {
+      const { start, end } = qbDates();
+      const results = {};
+      let rt = data.quickbooks.refreshToken;
+      for (const type of ['pnl', 'bs']) {
+        const res = await fetch('/api/quickbooks/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: rt, realmId: data.quickbooks.realmId, type, start, end }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || 'report failed');
+        results[type] = j.report;
+        if (j.refreshToken) rt = j.refreshToken;
+      }
+      setQbReports(results);
+      setData(d => ({ ...d, quickbooks: { ...d.quickbooks, refreshToken: rt } }));
+    } catch (e) {
+      setQbMsg(String(e.message || e));
+    }
+    setQbBusy(false);
+  };
+
+  const disconnectQb = () => {
+    setData(d => {
+      const next = { ...d };
+      delete next.quickbooks;
+      return next;
+    });
+    setQbReports(null);
+  };
+
   // ---------- Projection ----------
   const buildProjection = () => {
     const HORIZON = 120;
@@ -974,6 +1053,7 @@ export default function DashboardPage() {
           <button className={`nav-btn ${tab === 'purchases' ? 'active' : ''}`} onClick={() => setTab('purchases')}>{tabName('purchases', 'Purchases')}</button>
           <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>{tabName('debts', 'Big debts')}</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
+          <button className={`nav-btn ${tab === 'quickbooks' ? 'active' : ''}`} onClick={() => setTab('quickbooks')}>QuickBooks</button>
           {(data.customTabs || []).map(t => (
             <button key={t.id} className={`nav-btn custom ${tab === `custom-${t.id}` ? 'active' : ''}`} onClick={() => setTab(`custom-${t.id}`)}>
               {t.name || 'Untitled'}
@@ -1544,6 +1624,63 @@ export default function DashboardPage() {
               </table>
               <p className="projection-note">Incoming AR only counts here when it has an expected date set (Incoming tab). AR without a date ({fmt(data.incoming.filter(i => !i.expected).reduce((s, i) => s + (i.amount || 0), 0))}) is upside not shown.</p>
             </div>
+          </div>
+        )}
+
+        {/* ============ QUICKBOOKS ============ */}
+        {tab === 'quickbooks' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <h2>QuickBooks</h2>
+              {data.quickbooks && (
+                <div className="job-header-actions">
+                  <select value={qbPeriod} onChange={e => setQbPeriod(e.target.value)} className="qb-period">
+                    <option value="this_month">This month</option>
+                    <option value="last_month">Last month</option>
+                    <option value="this_quarter">This quarter</option>
+                    <option value="ytd">Year to date</option>
+                    <option value="last_year">Last year</option>
+                  </select>
+                  <button className="btn-add small" onClick={loadQbReports} disabled={qbBusy}>
+                    {qbBusy ? 'Loading…' : '⟳ Load reports'}
+                  </button>
+                  <button className="auth-skip" onClick={disconnectQb}>Disconnect</button>
+                </div>
+              )}
+            </div>
+
+            {!data.quickbooks && (
+              <div className="quick-summary">
+                <h3>Connect your QuickBooks</h3>
+                <p className="auth-text">One-time authorization — then your P&L and Balance Sheet render right here, live from QuickBooks.</p>
+                <button className="btn-add" onClick={() => { window.location.href = '/api/quickbooks/auth'; }}>Connect QuickBooks</button>
+              </div>
+            )}
+
+            {qbMsg && <p className="sheet-msg">{qbMsg}</p>}
+
+            {data.quickbooks && !qbReports && !qbBusy && (
+              <p className="subtitle">Pick a period and hit “Load reports”.</p>
+            )}
+
+            {qbReports && ['pnl', 'bs'].map(key => {
+              const rep = qbReports[key];
+              if (!rep) return null;
+              return (
+                <div key={key} className="quick-summary qb-report">
+                  <h3>{rep.title}</h3>
+                  <p className="subtitle">{rep.period}</p>
+                  {rep.rows.map((r, i) => (
+                    <div key={i} className={`qb-row ${r.kind}`} style={{ paddingLeft: 8 + r.depth * 18 }}>
+                      <span className="qb-label">{r.label}</span>
+                      {r.amount != null && (
+                        <span className={`qb-amt ${r.amount < 0 ? 'g-neg' : ''}`}>{fmt2(r.amount)}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
