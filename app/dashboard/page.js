@@ -209,6 +209,102 @@ export default function DashboardPage() {
     setSession(null);
   };
 
+  // ---------- Teller bank connections ----------
+  const TELLER_APP_ID = process.env.NEXT_PUBLIC_TELLER_APP_ID;
+  const TELLER_ENV = process.env.NEXT_PUBLIC_TELLER_ENV || 'sandbox';
+  const [bankBusy, setBankBusy] = useState(false);
+  const [bankErr, setBankErr] = useState('');
+
+  const loadTellerScript = () => new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && window.TellerConnect) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://cdn.teller.io/connect/connect.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Could not load Teller Connect'));
+    document.head.appendChild(s);
+  });
+
+  const applyTellerAccounts = (list) => {
+    setData(d => {
+      const accounts = [...d.accounts];
+      const cards = [...d.cards];
+      list.forEach(t => {
+        const label = `${t.institution || 'Bank'} ${t.name}${t.last_four ? ' ··' + t.last_four : ''}`;
+        if (t.type === 'credit') {
+          const bal = Math.abs(t.ledger != null ? t.ledger : (t.available || 0));
+          const i = cards.findIndex(c => c.tellerId === t.id);
+          if (i >= 0) cards[i] = { ...cards[i], amount: bal };
+          else cards.push({ id: Date.now() + Math.floor(Math.random() * 1000), tellerId: t.id, name: label, amount: bal, close: '', due: '', notes: 'live' });
+        } else {
+          const bal = t.available != null ? t.available : (t.ledger || 0);
+          const i = accounts.findIndex(a => a.tellerId === t.id);
+          if (i >= 0) accounts[i] = { ...accounts[i], balance: bal };
+          else accounts.push({ id: Date.now() + Math.floor(Math.random() * 1000), tellerId: t.id, name: label, balance: bal, notes: 'live' });
+        }
+      });
+      return { ...d, accounts, cards, tellerLastSync: new Date().toISOString() };
+    });
+  };
+
+  const refreshBalances = async (tokens) => {
+    const enrollments = tokens || (data.tellerEnrollments || []).map(e => e.accessToken);
+    if (!enrollments.length) return;
+    setBankBusy(true);
+    setBankErr('');
+    try {
+      for (const token of enrollments) {
+        const res = await fetch('/api/teller/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'refresh failed');
+        applyTellerAccounts(json);
+      }
+    } catch (e) {
+      setBankErr(String(e.message || e));
+    }
+    setBankBusy(false);
+  };
+
+  const connectBank = async () => {
+    setBankErr('');
+    if (!TELLER_APP_ID) {
+      setBankErr('Teller application ID not configured yet');
+      return;
+    }
+    setBankBusy(true);
+    try {
+      await loadTellerScript();
+      const connect = window.TellerConnect.setup({
+        applicationId: TELLER_APP_ID,
+        environment: TELLER_ENV,
+        products: ['balance'],
+        onSuccess: (enrollment) => {
+          setData(d => ({
+            ...d,
+            tellerEnrollments: [
+              ...(d.tellerEnrollments || []),
+              { accessToken: enrollment.accessToken, institution: enrollment.enrollment && enrollment.enrollment.institution && enrollment.enrollment.institution.name },
+            ],
+          }));
+          refreshBalances([enrollment.accessToken]);
+        },
+        onExit: () => setBankBusy(false),
+      });
+      connect.open();
+    } catch (e) {
+      setBankErr(String(e.message || e));
+      setBankBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (loaded && (data.tellerEnrollments || []).length) refreshBalances();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
   // ---------- Totals ----------
   const totalCash = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
   const totalOwed = data.cards.reduce((s, c) => s + (c.amount || 0), 0);
@@ -463,8 +559,24 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <h2>Cash on hand</h2>
-              <button className="btn-add" onClick={() => addToList('accounts', { name: '', balance: 0, notes: '' })}>+ Add account</button>
+              <div className="job-header-actions">
+                {TELLER_APP_ID && (
+                  <button className="btn-add small" onClick={connectBank} disabled={bankBusy}>
+                    {bankBusy ? 'Working…' : '🔗 Connect bank'}
+                  </button>
+                )}
+                {(data.tellerEnrollments || []).length > 0 && (
+                  <button className="btn-add small" onClick={() => refreshBalances()} disabled={bankBusy}>
+                    {bankBusy ? 'Refreshing…' : '↻ Refresh balances'}
+                  </button>
+                )}
+                <button className="btn-add" onClick={() => addToList('accounts', { name: '', balance: 0, notes: '' })}>+ Add account</button>
+              </div>
             </div>
+            {bankErr && <p className="auth-error">{bankErr}</p>}
+            {data.tellerLastSync && (
+              <p className="subtitle">Bank balances last synced {new Date(data.tellerLastSync).toLocaleString()} — linked accounts update automatically here and in Owed now</p>
+            )}
             <div className="spreadsheet">
               <table className="data-table">
                 <thead>
