@@ -612,6 +612,120 @@
 
 .col-x2 { width: 96px; }
 
+.th-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.th-input {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #00d9ff !important;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 4px 2px !important;
+  width: 100%;
+  min-width: 60px;
+}
+
+.th-input:hover,
+.th-input:focus {
+  border-color: rgba(0, 217, 255, 0.4) !important;
+  border-radius: 4px;
+  outline: none;
+}
+
+.th-tools {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.th-edit:hover .th-tools {
+  display: inline-flex;
+}
+
+.th-type {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(0, 217, 255, 0.2) !important;
+  color: #a8b5d1 !important;
+  font-size: 10px !important;
+  padding: 2px 2px !important;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.th-del {
+  background: none;
+  border: none;
+  color: #ff6b9e;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.th-add {
+  background: rgba(6, 255, 165, 0.1);
+  border: 1px solid rgba(6, 255, 165, 0.3);
+  color: #06ffa5;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th-add:hover {
+  background: rgba(6, 255, 165, 0.2);
+}
+
+.row-actions {
+  white-space: nowrap;
+}
+
+.title-input {
+  min-width: 280px;
+  font-size: 28px !important;
+}
+
+.classify-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+  flex-wrap: wrap;
+}
+
+.classify-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.classify-info strong {
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.classify-info span {
+  color: #a8b5d1;
+  font-size: 12px;
+  font-family: 'Monaco', monospace;
+}
+
+.classify-btns {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .act-btn {
   background: rgba(6, 255, 165, 0.15);
   border: 1px solid rgba(6, 255, 165, 0.3);

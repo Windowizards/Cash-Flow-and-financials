@@ -143,6 +143,142 @@ function nextDue(str) {
 const workerTotal = (w) => (w.rate || 0) * w.hours.reduce((a, b) => a + (b || 0), 0);
 const gridTotal = (workers) => workers.reduce((s, w) => s + workerTotal(w), 0);
 
+const DEFAULT_SCHEMAS = {
+  accounts: [
+    { key: 'name', label: 'Account', type: 'text', core: true },
+    { key: 'balance', label: 'Balance', type: 'number', core: true },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  cards: [
+    { key: 'name', label: 'Name', type: 'text', core: true },
+    { key: 'amount', label: 'Amount', type: 'number', core: true },
+    { key: 'close', label: 'Statement close', type: 'text' },
+    { key: 'due', label: 'Due date', type: 'text', core: true },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  incoming: [
+    { key: 'name', label: 'Client / job', type: 'text', core: true },
+    { key: 'amount', label: 'Amount', type: 'number', core: true },
+    { key: 'expected', label: 'Expected', type: 'date', core: true },
+    { key: 'cost', label: 'Costs', type: 'number', core: true },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  monthly: [
+    { key: 'name', label: 'Expense', type: 'text', core: true },
+    { key: 'amount', label: 'Monthly', type: 'number', core: true },
+    { key: 'dueDay', label: 'Due day', type: 'number', core: true },
+    { key: 'type', label: 'Type', type: 'select', options: ['business', 'personal'], core: true },
+  ],
+  zeroCards: [
+    { key: 'name', label: 'Card', type: 'text', core: true },
+    { key: 'balance', label: 'Balance', type: 'number', core: true },
+    { key: 'limit', label: 'Limit', type: 'number', core: true },
+    { key: 'promoEnd', label: 'Promo ends', type: 'text' },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  chinaOrder: [
+    { key: 'name', label: 'Item', type: 'text', core: true },
+    { key: 'amount', label: 'Total cost', type: 'number', core: true },
+    { key: 'paid', label: 'Paid so far', type: 'number', core: true },
+    { key: 'status', label: 'Status', type: 'select', options: ['quoted', 'ordered', 'production', 'shipped', 'customs', 'received'], core: true },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  personalPurchases: [
+    { key: 'name', label: 'Purchase', type: 'text', core: true },
+    { key: 'amount', label: 'Amount', type: 'number', core: true },
+    { key: 'date', label: 'Date', type: 'date', core: true },
+    { key: 'status', label: 'Status', type: 'select', options: ['planned', 'bought', 'skipped'], core: true },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  debts: [
+    { key: 'name', label: 'Debt', type: 'text', core: true },
+    { key: 'amount', label: 'Balance', type: 'number', core: true },
+    { key: 'limit', label: 'Limit', type: 'number', core: true },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+};
+
+const CUSTOM_TAB_COLUMNS = [
+  { key: 'name', label: 'Name', type: 'text' },
+  { key: 'amount', label: 'Amount', type: 'number' },
+  { key: 'date', label: 'Date', type: 'text' },
+  { key: 'notes', label: 'Notes', type: 'text' },
+];
+
+function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDelRow, onSchemaChange, footerExtras = [] }) {
+  const addColumn = () => onSchemaChange([...columns, { key: 'c_' + Date.now(), label: 'New column', type: 'text' }]);
+  const renameColumn = (key, label) => onSchemaChange(columns.map(c => c.key === key ? { ...c, label } : c));
+  const retypeColumn = (key, type) => onSchemaChange(columns.map(c => c.key === key ? { ...c, type } : c));
+  const removeColumn = (key) => onSchemaChange(columns.filter(c => c.key !== key));
+
+  return (
+    <div className="spreadsheet">
+      <div className="payroll-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              {columns.map(col => (
+                <th key={col.key} className={col.type === 'number' ? 'col-amount' : col.type === 'date' ? 'col-date' : undefined}>
+                  <div className="th-edit">
+                    <input className="th-input" value={col.label} onChange={e => renameColumn(col.key, e.target.value)} title="Click to rename column" />
+                    {!col.core && (
+                      <span className="th-tools">
+                        <select className="th-type" value={col.type} onChange={e => retypeColumn(col.key, e.target.value)} title="Column type">
+                          <option value="text">abc</option>
+                          <option value="number">123</option>
+                          <option value="date">📅</option>
+                        </select>
+                        <button className="th-del" title="Remove column" onClick={() => removeColumn(col.key)}>✕</button>
+                      </span>
+                    )}
+                  </div>
+                </th>
+              ))}
+              {computed.map(c => <th key={c.label} className="col-amount">{c.label}</th>)}
+              <th className="col-x2">
+                <button className="th-add" title="Add a column" onClick={addColumn}>＋ col</button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={row.id}>
+                {columns.map(col => (
+                  <td key={col.key}>
+                    {col.type === 'select' ? (
+                      <select value={row[col.key] || (col.options && col.options[0]) || ''} onChange={e => onCell(row.id, col.key, e.target.value, false)}>
+                        {(col.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
+                        value={row[col.key] === 0 || row[col.key] == null ? (row[col.key] === 0 ? '' : '') : row[col.key]}
+                        onChange={e => onCell(row.id, col.key, e.target.value, col.type === 'number')}
+                        placeholder={col.type === 'number' ? '0' : ''}
+                      />
+                    )}
+                  </td>
+                ))}
+                {computed.map(c => <td key={c.label} className={c.className ? c.className(row) : 'daily'}>{c.fn(row)}</td>)}
+                <td className="row-actions">
+                  {rowActions && rowActions(row)}
+                  <button className="btn-delete" onClick={() => onDelRow(row.id)}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="table-footer">
+        {columns.filter(c => c.type === 'number').map(c => (
+          <strong key={c.key}>{c.label}: {fmt(rows.reduce((s, r) => s + (parseFloat(r[c.key]) || 0), 0))}</strong>
+        ))}
+        {footerExtras.map((f, i) => <strong key={i}>{f}</strong>)}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [tab, setTab] = useState('overview');
   const [payrollView, setPayrollView] = useState('overall');
@@ -273,6 +409,7 @@ export default function DashboardPage() {
   // ---------- Plaid bank connections ----------
   const [bankBusy, setBankBusy] = useState(false);
   const [bankErr, setBankErr] = useState('');
+  const [pendingBank, setPendingBank] = useState([]);
 
   const loadPlaidScript = () => new Promise((resolve, reject) => {
     if (typeof window !== 'undefined' && window.Plaid) return resolve();
@@ -288,27 +425,53 @@ export default function DashboardPage() {
       const accounts = [...d.accounts];
       const cards = [...d.cards];
       const debts = [...d.debts];
+      const fresh = [];
       list.forEach(t => {
-        const label = `${institution || 'Bank'} ${t.name}${t.mask ? ' ··' + t.mask : ''}`;
+        if ((d.bankIgnored || []).includes(t.id)) return;
         if (t.type === 'credit') {
           const bal = Math.abs(t.current != null ? t.current : (t.available || 0));
           const i = cards.findIndex(c => c.plaidId === t.id);
           if (i >= 0) cards[i] = { ...cards[i], amount: bal };
-          else cards.push({ id: Date.now() + Math.floor(Math.random() * 1000), plaidId: t.id, name: label, amount: bal, close: '', due: '', notes: 'live' });
+          else fresh.push({ ...t, institution });
         } else if (t.type === 'loan') {
           const bal = Math.abs(t.current || 0);
           const i = debts.findIndex(x => x.plaidId === t.id);
           if (i >= 0) debts[i] = { ...debts[i], amount: bal };
-          else debts.push({ id: Date.now() + Math.floor(Math.random() * 1000), plaidId: t.id, name: label, amount: bal, limit: t.limit || 0, notes: 'live' });
+          else fresh.push({ ...t, institution });
         } else {
           const bal = t.available != null ? t.available : (t.current || 0);
           const i = accounts.findIndex(a => a.plaidId === t.id);
           if (i >= 0) accounts[i] = { ...accounts[i], balance: bal };
-          else accounts.push({ id: Date.now() + Math.floor(Math.random() * 1000), plaidId: t.id, name: label, balance: bal, notes: 'live' });
+          else fresh.push({ ...t, institution });
         }
       });
+      if (fresh.length) {
+        setPendingBank(p => [...p, ...fresh.filter(f => !p.some(x => x.id === f.id))]);
+      }
       return { ...d, accounts, cards, debts, bankLastSync: new Date().toISOString() };
     });
+  };
+
+  const classifyBank = (acct, bucket) => {
+    if (bucket === 'skip') {
+      setData(d => ({ ...d, bankIgnored: [...(d.bankIgnored || []), acct.id] }));
+    } else {
+      const tag = bucket === 'business' ? 'Window Wizards' : 'personal';
+      setData(d => {
+        const label = `${acct.institution || 'Bank'} ${acct.name}${acct.mask ? ' ··' + acct.mask : ''}`;
+        const base = { id: Date.now() + Math.floor(Math.random() * 1000), plaidId: acct.id, bucket, notes: 'live · ' + tag };
+        if (acct.type === 'credit') {
+          const bal = Math.abs(acct.current != null ? acct.current : (acct.available || 0));
+          return { ...d, cards: [...d.cards, { ...base, name: label, amount: bal, close: '', due: '' }] };
+        }
+        if (acct.type === 'loan') {
+          return { ...d, debts: [...d.debts, { ...base, name: label, amount: Math.abs(acct.current || 0), limit: acct.limit || 0 }] };
+        }
+        const bal = acct.available != null ? acct.available : (acct.current || 0);
+        return { ...d, accounts: [...d.accounts, { ...base, name: label, balance: bal }] };
+      });
+    }
+    setPendingBank(p => p.filter(x => x.id !== acct.id));
   };
 
   const refreshBalances = async (items) => {
@@ -462,6 +625,12 @@ export default function DashboardPage() {
   const removeFromList = (key, id) => {
     setData(d => ({ ...d, [key]: d[key].filter(row => row.id !== id) }));
   };
+
+  // ---------- Editable schemas + tab names ----------
+  const getSchema = (key) => ((data.schemas || {})[key]) || DEFAULT_SCHEMAS[key];
+  const setSchema = (key, cols) => setData(d => ({ ...d, schemas: { ...(d.schemas || {}), [key]: cols } }));
+  const tabName = (key, def) => ((data.tabNames || {})[key]) || def;
+  const setTabName = (key, v) => setData(d => ({ ...d, tabNames: { ...(d.tabNames || {}), [key]: v } }));
 
   // ---------- Payroll helpers (generic over standard + jobs) ----------
   const getWorkers = (target) => target === 'standard'
@@ -782,15 +951,15 @@ export default function DashboardPage() {
         </div>
         <nav className="nav-tabs">
           <button className={`nav-btn ${tab === 'overview' ? 'active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
-          <button className={`nav-btn ${tab === 'cash' ? 'active' : ''}`} onClick={() => setTab('cash')}>Cash</button>
-          <button className={`nav-btn ${tab === 'owed' ? 'active' : ''}`} onClick={() => setTab('owed')}>Owed now</button>
-          <button className={`nav-btn ${tab === 'incoming' ? 'active' : ''}`} onClick={() => setTab('incoming')}>Incoming</button>
-          <button className={`nav-btn ${tab === 'monthly' ? 'active' : ''}`} onClick={() => setTab('monthly')}>Monthly</button>
-          <button className={`nav-btn ${tab === 'payroll' ? 'active' : ''}`} onClick={() => setTab('payroll')}>Payroll</button>
-          <button className={`nav-btn ${tab === 'zero' ? 'active' : ''}`} onClick={() => setTab('zero')}>0% cards</button>
-          <button className={`nav-btn ${tab === 'china' ? 'active' : ''}`} onClick={() => setTab('china')}>China order</button>
-          <button className={`nav-btn ${tab === 'purchases' ? 'active' : ''}`} onClick={() => setTab('purchases')}>Purchases</button>
-          <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>Big debts</button>
+          <button className={`nav-btn ${tab === 'cash' ? 'active' : ''}`} onClick={() => setTab('cash')}>{tabName('cash', 'Cash')}</button>
+          <button className={`nav-btn ${tab === 'owed' ? 'active' : ''}`} onClick={() => setTab('owed')}>{tabName('owed', 'Owed now')}</button>
+          <button className={`nav-btn ${tab === 'incoming' ? 'active' : ''}`} onClick={() => setTab('incoming')}>{tabName('incoming', 'Incoming')}</button>
+          <button className={`nav-btn ${tab === 'monthly' ? 'active' : ''}`} onClick={() => setTab('monthly')}>{tabName('monthly', 'Monthly')}</button>
+          <button className={`nav-btn ${tab === 'payroll' ? 'active' : ''}`} onClick={() => setTab('payroll')}>{tabName('payroll', 'Payroll')}</button>
+          <button className={`nav-btn ${tab === 'zero' ? 'active' : ''}`} onClick={() => setTab('zero')}>{tabName('zero', '0% cards')}</button>
+          <button className={`nav-btn ${tab === 'china' ? 'active' : ''}`} onClick={() => setTab('china')}>{tabName('china', 'China order')}</button>
+          <button className={`nav-btn ${tab === 'purchases' ? 'active' : ''}`} onClick={() => setTab('purchases')}>{tabName('purchases', 'Purchases')}</button>
+          <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>{tabName('debts', 'Big debts')}</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
           {(data.customTabs || []).map(t => (
             <button key={t.id} className={`nav-btn custom ${tab === `custom-${t.id}` ? 'active' : ''}`} onClick={() => setTab(`custom-${t.id}`)}>
@@ -942,7 +1111,7 @@ export default function DashboardPage() {
         {tab === 'cash' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Cash on hand</h2>
+              <input className="job-name title-input" value={tabName('cash', 'Cash')} onChange={e => setTabName('cash', e.target.value)} />
               <div className="job-header-actions">
                 <button className="btn-add small" onClick={connectBank} disabled={bankBusy}>
                   {bankBusy ? 'Working…' : '🔗 Connect bank (Plaid)'}
@@ -959,24 +1128,14 @@ export default function DashboardPage() {
             {data.bankLastSync && (
               <p className="subtitle">Bank balances last synced {new Date(data.bankLastSync).toLocaleString()} — linked accounts update automatically here, in Owed now, and Big debts</p>
             )}
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Account</th><th className="col-amount">Balance</th><th>Notes</th><th className="col-x"></th></tr>
-                </thead>
-                <tbody>
-                  {data.accounts.map(a => (
-                    <tr key={a.id}>
-                      <td><input type="text" value={a.name} onChange={e => updateList('accounts', a.id, 'name', e.target.value)} placeholder="Account name" /></td>
-                      <td><input type="number" value={a.balance || ''} onChange={e => updateList('accounts', a.id, 'balance', e.target.value, true)} placeholder="0" /></td>
-                      <td><input type="text" value={a.notes || ''} onChange={e => updateList('accounts', a.id, 'notes', e.target.value)} placeholder="" /></td>
-                      <td><button className="btn-delete" onClick={() => removeFromList('accounts', a.id)}>✕</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="table-footer"><strong>Total I have: {fmt(totalCash)}</strong></div>
-            </div>
+            <EditableTable
+              columns={getSchema('accounts')}
+              rows={data.accounts}
+              onCell={(id, key, v, num) => updateList('accounts', id, key, v, num)}
+              onDelRow={(id) => removeFromList('accounts', id)}
+              onSchemaChange={(cols) => setSchema('accounts', cols)}
+              footerExtras={[`Total I have: ${fmt(totalCash)}`]}
+            />
           </div>
         )}
 
@@ -984,36 +1143,19 @@ export default function DashboardPage() {
         {tab === 'owed' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Owed now</h2>
+              <input className="job-name title-input" value={tabName('owed', 'Owed now')} onChange={e => setTabName('owed', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('cards', { name: '', amount: 0, close: '', due: '', notes: '' })}>+ Add row</button>
             </div>
             <p className="subtitle">Credit cards, crew payments, bills — everything currently due</p>
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Name</th><th className="col-amount">Amount</th><th className="col-date">Statement close</th><th className="col-date">Due date</th><th>Notes</th><th className="col-x2"></th></tr>
-                </thead>
-                <tbody>
-                  {data.cards.map(c => (
-                    <tr key={c.id}>
-                      <td><input type="text" value={c.name} onChange={e => updateList('cards', c.id, 'name', e.target.value)} placeholder="Card / person" /></td>
-                      <td><input type="number" value={c.amount || ''} onChange={e => updateList('cards', c.id, 'amount', e.target.value, true)} placeholder="0" /></td>
-                      <td><input type="text" value={c.close || ''} onChange={e => updateList('cards', c.id, 'close', e.target.value)} placeholder="Aug 3" /></td>
-                      <td><input type="text" value={c.due || ''} onChange={e => updateList('cards', c.id, 'due', e.target.value)} placeholder="9/3" /></td>
-                      <td><input type="text" value={c.notes || ''} onChange={e => updateList('cards', c.id, 'notes', e.target.value)} placeholder="" /></td>
-                      <td>
-                        <button className="act-btn" title="Mark paid — subtracts from first cash account" onClick={() => payOwed(c)}>✓</button>
-                        <button className="btn-delete" onClick={() => removeFromList('cards', c.id)}>✕</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="table-footer">
-                <strong>Total owed: {fmt(totalOwed)}</strong>
-                <strong>Cash − owed: {fmt(netNow)}</strong>
-              </div>
-            </div>
+            <EditableTable
+              columns={getSchema('cards')}
+              rows={data.cards}
+              onCell={(id, key, v, num) => updateList('cards', id, key, v, num)}
+              onDelRow={(id) => removeFromList('cards', id)}
+              onSchemaChange={(cols) => setSchema('cards', cols)}
+              rowActions={(row) => <button className="act-btn" title="Mark paid — subtracts from first cash account" onClick={() => payOwed(row)}>✓</button>}
+              footerExtras={[`Cash − owed: ${fmt(netNow)}`]}
+            />
           </div>
         )}
 
@@ -1021,38 +1163,24 @@ export default function DashboardPage() {
         {tab === 'incoming' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Incoming (AR)</h2>
+              <input className="job-name title-input" value={tabName('incoming', 'Incoming')} onChange={e => setTabName('incoming', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('incoming', { name: '', amount: 0, notes: '' })}>+ Add invoice</button>
             </div>
             <p className="subtitle">Who owes you money. Set an expected date and it shows up as income in your Projection. ✓ = collected (adds to your first cash account).</p>
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Client / job</th><th className="col-amount">Amount</th><th className="col-date">Expected</th><th className="col-amount">Costs</th><th className="col-amount">Margin</th><th>Notes</th><th className="col-x2"></th></tr>
-                </thead>
-                <tbody>
-                  {data.incoming.map(i => (
-                    <tr key={i.id}>
-                      <td><input type="text" value={i.name} onChange={e => updateList('incoming', i.id, 'name', e.target.value)} placeholder="Client" /></td>
-                      <td><input type="number" value={i.amount || ''} onChange={e => updateList('incoming', i.id, 'amount', e.target.value, true)} placeholder="0" /></td>
-                      <td><input type="date" value={i.expected || ''} onChange={e => updateList('incoming', i.id, 'expected', e.target.value)} /></td>
-                      <td><input type="number" value={i.cost || ''} onChange={e => updateList('incoming', i.id, 'cost', e.target.value, true)} placeholder="0" /></td>
-                      <td className={(i.amount || 0) - (i.cost || 0) >= 0 ? 'daily' : 'spent'}>{fmt((i.amount || 0) - (i.cost || 0))}</td>
-                      <td><input type="text" value={i.notes || ''} onChange={e => updateList('incoming', i.id, 'notes', e.target.value)} placeholder="net 30, week 2..." /></td>
-                      <td>
-                        <button className="act-btn" title="Mark collected — adds to first cash account" onClick={() => collectIncoming(i)}>✓</button>
-                        <button className="btn-delete" onClick={() => removeFromList('incoming', i.id)}>✕</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="table-footer">
-                <strong>Total incoming: {fmt(totalIncoming)}</strong>
-                <strong>Total costs: {fmt(data.incoming.reduce((s, i) => s + (i.cost || 0), 0))}</strong>
-                <strong>Total margin: {fmt(data.incoming.reduce((s, i) => s + (i.amount || 0) - (i.cost || 0), 0))}</strong>
-              </div>
-            </div>
+            <EditableTable
+              columns={getSchema('incoming')}
+              rows={data.incoming}
+              computed={[{
+                label: 'Margin',
+                fn: (row) => fmt((row.amount || 0) - (row.cost || 0)),
+                className: (row) => (row.amount || 0) - (row.cost || 0) >= 0 ? 'daily' : 'spent',
+              }]}
+              onCell={(id, key, v, num) => updateList('incoming', id, key, v, num)}
+              onDelRow={(id) => removeFromList('incoming', id)}
+              onSchemaChange={(cols) => setSchema('incoming', cols)}
+              rowActions={(row) => <button className="act-btn" title="Mark collected — adds to first cash account" onClick={() => collectIncoming(row)}>✓</button>}
+              footerExtras={[`Total margin: ${fmt(data.incoming.reduce((s, i) => s + (i.amount || 0) - (i.cost || 0), 0))}`]}
+            />
           </div>
         )}
 
@@ -1060,7 +1188,7 @@ export default function DashboardPage() {
         {tab === 'monthly' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Fixed monthly expenses</h2>
+              <input className="job-name title-input" value={tabName('monthly', 'Monthly')} onChange={e => setTabName('monthly', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('monthly', { name: '', amount: 0, dueDay: 1, type: 'business' })}>+ Add expense</button>
             </div>
 
@@ -1082,30 +1210,14 @@ export default function DashboardPage() {
             {[['business', 'Business', bizMonthly], ['personal', 'Personal', persMonthly]].map(([type, label, rows]) => (
               <div key={type} className="sub-section">
                 <h3 className="sub-title">{label} — {fmt(rows.reduce((s, e) => s + (e.amount || 0), 0))}/mo</h3>
-                <div className="spreadsheet">
-                  <table className="data-table">
-                    <thead>
-                      <tr><th>Expense</th><th className="col-amount">Monthly</th><th className="col-amount">Daily avg</th><th className="col-date">Due day</th><th className="col-date">Type</th><th className="col-x"></th></tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(e => (
-                        <tr key={e.id}>
-                          <td><input type="text" value={e.name} onChange={ev => updateList('monthly', e.id, 'name', ev.target.value)} placeholder="Expense" /></td>
-                          <td><input type="number" value={e.amount || ''} onChange={ev => updateList('monthly', e.id, 'amount', ev.target.value, true)} placeholder="0" /></td>
-                          <td className="daily">{fmt2((e.amount || 0) / 30)}</td>
-                          <td><input type="number" min="1" max="31" value={e.dueDay || ''} onChange={ev => updateList('monthly', e.id, 'dueDay', ev.target.value, true)} placeholder="1" /></td>
-                          <td>
-                            <select value={e.type} onChange={ev => updateList('monthly', e.id, 'type', ev.target.value)}>
-                              <option value="business">Business</option>
-                              <option value="personal">Personal</option>
-                            </select>
-                          </td>
-                          <td><button className="btn-delete" onClick={() => removeFromList('monthly', e.id)}>✕</button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <EditableTable
+                  columns={getSchema('monthly')}
+                  rows={rows}
+                  computed={[{ label: 'Daily avg', fn: (row) => fmt2((row.amount || 0) / 30) }]}
+                  onCell={(id, key, v, num) => updateList('monthly', id, key, v, num)}
+                  onDelRow={(id) => removeFromList('monthly', id)}
+                  onSchemaChange={(cols) => setSchema('monthly', cols)}
+                />
               </div>
             ))}
           </div>
@@ -1115,7 +1227,7 @@ export default function DashboardPage() {
         {tab === 'payroll' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Payroll / job costing</h2>
+              <input className="job-name title-input" value={tabName('payroll', 'Payroll')} onChange={e => setTabName('payroll', e.target.value)} />
               <button className="btn-add" onClick={addJob}>+ Add job</button>
             </div>
 
@@ -1238,37 +1350,22 @@ export default function DashboardPage() {
         {tab === 'zero' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>0% credit cards</h2>
+              <input className="job-name title-input" value={tabName('zero', '0% cards')} onChange={e => setTabName('zero', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('zeroCards', { name: '', balance: 0, limit: 0, promoEnd: '', notes: '' })}>+ Add card</button>
             </div>
             <p className="subtitle">No interest for now — watch the promo end dates</p>
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Card</th><th className="col-amount">Balance</th><th className="col-amount">Limit</th><th className="col-amount">Used</th><th className="col-date">Promo ends</th><th>Notes</th><th className="col-x"></th></tr>
-                </thead>
-                <tbody>
-                  {(data.zeroCards || []).map(z => {
-                    const util = z.limit > 0 ? Math.round((z.balance / z.limit) * 100) : null;
-                    return (
-                      <tr key={z.id}>
-                        <td><input type="text" value={z.name} onChange={e => updateList('zeroCards', z.id, 'name', e.target.value)} placeholder="Card" /></td>
-                        <td><input type="number" value={z.balance || ''} onChange={e => updateList('zeroCards', z.id, 'balance', e.target.value, true)} placeholder="0" /></td>
-                        <td><input type="number" value={z.limit || ''} onChange={e => updateList('zeroCards', z.id, 'limit', e.target.value, true)} placeholder="0" /></td>
-                        <td className={util != null && util > 90 ? 'spent' : 'utilization'}>{util != null ? util + '%' : '—'}</td>
-                        <td><input type="text" value={z.promoEnd || ''} onChange={e => updateList('zeroCards', z.id, 'promoEnd', e.target.value)} placeholder="3/2027" /></td>
-                        <td><input type="text" value={z.notes || ''} onChange={e => updateList('zeroCards', z.id, 'notes', e.target.value)} placeholder="" /></td>
-                        <td><button className="btn-delete" onClick={() => removeFromList('zeroCards', z.id)}>✕</button></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              <div className="table-footer">
-                <strong>Total 0% balance: {fmt(totalZero)}</strong>
-                <strong>Total limit: {fmt((data.zeroCards || []).reduce((s, z) => s + (z.limit || 0), 0))}</strong>
-              </div>
-            </div>
+            <EditableTable
+              columns={getSchema('zeroCards')}
+              rows={data.zeroCards || []}
+              computed={[{
+                label: 'Used',
+                fn: (row) => row.limit > 0 ? Math.round((row.balance / row.limit) * 100) + '%' : '—',
+                className: (row) => row.limit > 0 && (row.balance / row.limit) > 0.9 ? 'spent' : 'utilization',
+              }]}
+              onCell={(id, key, v, num) => updateList('zeroCards', id, key, v, num)}
+              onDelRow={(id) => removeFromList('zeroCards', id)}
+              onSchemaChange={(cols) => setSchema('zeroCards', cols)}
+            />
           </div>
         )}
 
@@ -1276,44 +1373,23 @@ export default function DashboardPage() {
         {tab === 'china' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>China order</h2>
+              <input className="job-name title-input" value={tabName('china', 'China order')} onChange={e => setTabName('china', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
             </div>
             <p className="subtitle">Track the order line by line — cost, deposits paid, what's left</p>
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Item</th><th className="col-amount">Total cost</th><th className="col-amount">Paid so far</th><th className="col-amount">Remaining</th><th className="col-date">Status</th><th>Notes</th><th className="col-x"></th></tr>
-                </thead>
-                <tbody>
-                  {(data.chinaOrder || []).map(c => (
-                    <tr key={c.id}>
-                      <td><input type="text" value={c.name} onChange={e => updateList('chinaOrder', c.id, 'name', e.target.value)} placeholder="Item / shipment" /></td>
-                      <td><input type="number" value={c.amount || ''} onChange={e => updateList('chinaOrder', c.id, 'amount', e.target.value, true)} placeholder="0" /></td>
-                      <td><input type="number" value={c.paid || ''} onChange={e => updateList('chinaOrder', c.id, 'paid', e.target.value, true)} placeholder="0" /></td>
-                      <td className={(c.amount || 0) - (c.paid || 0) > 0 ? 'spent' : 'daily'}>{fmt((c.amount || 0) - (c.paid || 0))}</td>
-                      <td>
-                        <select value={c.status || 'quoted'} onChange={e => updateList('chinaOrder', c.id, 'status', e.target.value)}>
-                          <option value="quoted">Quoted</option>
-                          <option value="ordered">Ordered</option>
-                          <option value="production">In production</option>
-                          <option value="shipped">Shipped</option>
-                          <option value="customs">Customs</option>
-                          <option value="received">Received</option>
-                        </select>
-                      </td>
-                      <td><input type="text" value={c.notes || ''} onChange={e => updateList('chinaOrder', c.id, 'notes', e.target.value)} placeholder="" /></td>
-                      <td><button className="btn-delete" onClick={() => removeFromList('chinaOrder', c.id)}>✕</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="table-footer">
-                <strong>Order total: {fmt(chinaTotal)}</strong>
-                <strong>Paid: {fmt(chinaPaid)}</strong>
-                <strong>Still owed: {fmt(chinaTotal - chinaPaid)}</strong>
-              </div>
-            </div>
+            <EditableTable
+              columns={getSchema('chinaOrder')}
+              rows={data.chinaOrder || []}
+              computed={[{
+                label: 'Remaining',
+                fn: (row) => fmt((row.amount || 0) - (row.paid || 0)),
+                className: (row) => (row.amount || 0) - (row.paid || 0) > 0 ? 'spent' : 'daily',
+              }]}
+              onCell={(id, key, v, num) => updateList('chinaOrder', id, key, v, num)}
+              onDelRow={(id) => removeFromList('chinaOrder', id)}
+              onSchemaChange={(cols) => setSchema('chinaOrder', cols)}
+              footerExtras={[`Still owed: ${fmt(chinaTotal - chinaPaid)}`]}
+            />
           </div>
         )}
 
@@ -1321,7 +1397,7 @@ export default function DashboardPage() {
         {tab === 'purchases' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Personal purchases</h2>
+              <input className="job-name title-input" value={tabName('purchases', 'Purchases')} onChange={e => setTabName('purchases', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('personalPurchases', { name: '', amount: 0, date: '', status: 'planned', notes: '' })}>+ Add purchase</button>
             </div>
             <p className="subtitle">Planned purchases hit your Projection on their date — mark bought when done</p>
@@ -1371,35 +1447,14 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Purchase</th><th className="col-amount">Amount</th><th className="col-date">Date</th><th className="col-date">Status</th><th>Notes</th><th className="col-x"></th></tr>
-                </thead>
-                <tbody>
-                  {(data.personalPurchases || []).map(p => (
-                    <tr key={p.id}>
-                      <td><input type="text" value={p.name} onChange={e => updateList('personalPurchases', p.id, 'name', e.target.value)} placeholder="What" /></td>
-                      <td><input type="number" value={p.amount || ''} onChange={e => updateList('personalPurchases', p.id, 'amount', e.target.value, true)} placeholder="0" /></td>
-                      <td><input type="date" value={p.date || ''} onChange={e => updateList('personalPurchases', p.id, 'date', e.target.value)} /></td>
-                      <td>
-                        <select value={p.status || 'planned'} onChange={e => updateList('personalPurchases', p.id, 'status', e.target.value)}>
-                          <option value="planned">Planned</option>
-                          <option value="bought">Bought</option>
-                          <option value="skipped">Skipped</option>
-                        </select>
-                      </td>
-                      <td><input type="text" value={p.notes || ''} onChange={e => updateList('personalPurchases', p.id, 'notes', e.target.value)} placeholder="" /></td>
-                      <td><button className="btn-delete" onClick={() => removeFromList('personalPurchases', p.id)}>✕</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="table-footer">
-                <strong>Planned: {fmt(purchasesPlanned)}</strong>
-                <strong>Bought: {fmt(purchasesBought)}</strong>
-              </div>
-            </div>
+            <EditableTable
+              columns={getSchema('personalPurchases')}
+              rows={data.personalPurchases || []}
+              onCell={(id, key, v, num) => updateList('personalPurchases', id, key, v, num)}
+              onDelRow={(id) => removeFromList('personalPurchases', id)}
+              onSchemaChange={(cols) => setSchema('personalPurchases', cols)}
+              footerExtras={[`Planned: ${fmt(purchasesPlanned)}`, `Bought: ${fmt(purchasesBought)}`]}
+            />
           </div>
         )}
 
@@ -1407,33 +1462,22 @@ export default function DashboardPage() {
         {tab === 'debts' && (
           <div className="tab-content">
             <div className="tab-header">
-              <h2>Big debts</h2>
+              <input className="job-name title-input" value={tabName('debts', 'Big debts')} onChange={e => setTabName('debts', e.target.value)} />
               <button className="btn-add" onClick={() => addToList('debts', { name: '', amount: 0, limit: 0, notes: '' })}>+ Add debt</button>
             </div>
             <p className="subtitle">Long-term: family, travel, mortgage — 0% cards have their own tab now</p>
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Debt</th><th className="col-amount">Balance</th><th className="col-amount">Limit</th><th className="col-amount">Used</th><th>Notes</th><th className="col-x"></th></tr>
-                </thead>
-                <tbody>
-                  {data.debts.map(d => {
-                    const util = d.limit > 0 ? Math.round((d.amount / d.limit) * 100) : null;
-                    return (
-                      <tr key={d.id}>
-                        <td><input type="text" value={d.name} onChange={e => updateList('debts', d.id, 'name', e.target.value)} placeholder="Debt" /></td>
-                        <td><input type="number" value={d.amount || ''} onChange={e => updateList('debts', d.id, 'amount', e.target.value, true)} placeholder="0" /></td>
-                        <td><input type="number" value={d.limit || ''} onChange={e => updateList('debts', d.id, 'limit', e.target.value, true)} placeholder="—" /></td>
-                        <td className={util != null && util > 90 ? 'spent' : 'utilization'}>{util != null ? util + '%' : '—'}</td>
-                        <td><input type="text" value={d.notes || ''} onChange={e => updateList('debts', d.id, 'notes', e.target.value)} placeholder="" /></td>
-                        <td><button className="btn-delete" onClick={() => removeFromList('debts', d.id)}>✕</button></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              <div className="table-footer"><strong>Total long-term debt: {fmt(totalDebts)}</strong></div>
-            </div>
+            <EditableTable
+              columns={getSchema('debts')}
+              rows={data.debts}
+              computed={[{
+                label: 'Used',
+                fn: (row) => row.limit > 0 ? Math.round((row.amount / row.limit) * 100) + '%' : '—',
+                className: (row) => row.limit > 0 && (row.amount / row.limit) > 0.9 ? 'spent' : 'utilization',
+              }]}
+              onCell={(id, key, v, num) => updateList('debts', id, key, v, num)}
+              onDelRow={(id) => removeFromList('debts', id)}
+              onSchemaChange={(cols) => setSchema('debts', cols)}
+            />
           </div>
         )}
 
@@ -1500,28 +1544,43 @@ export default function DashboardPage() {
                 <button className="btn-delete" onClick={() => removeCustomTab(activeCustom.id)}>✕ Delete tab</button>
               </div>
             </div>
-            <div className="spreadsheet">
-              <table className="data-table">
-                <thead>
-                  <tr><th>Name</th><th className="col-amount">Amount</th><th className="col-date">Date</th><th>Notes</th><th className="col-x"></th></tr>
-                </thead>
-                <tbody>
-                  {activeCustom.rows.map(r => (
-                    <tr key={r.id}>
-                      <td><input type="text" value={r.name} onChange={e => updateCustomRow(activeCustom.id, r.id, 'name', e.target.value)} placeholder="" /></td>
-                      <td><input type="number" value={r.amount || ''} onChange={e => updateCustomRow(activeCustom.id, r.id, 'amount', e.target.value, true)} placeholder="0" /></td>
-                      <td><input type="text" value={r.date || ''} onChange={e => updateCustomRow(activeCustom.id, r.id, 'date', e.target.value)} placeholder="" /></td>
-                      <td><input type="text" value={r.notes || ''} onChange={e => updateCustomRow(activeCustom.id, r.id, 'notes', e.target.value)} placeholder="" /></td>
-                      <td><button className="btn-delete" onClick={() => removeCustomRow(activeCustom.id, r.id)}>✕</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="table-footer"><strong>Total: {fmt(activeCustom.rows.reduce((s, r) => s + (r.amount || 0), 0))}</strong></div>
-            </div>
+            <EditableTable
+              columns={activeCustom.columns || CUSTOM_TAB_COLUMNS}
+              rows={activeCustom.rows}
+              onCell={(rowId, key, v, num) => updateCustomRow(activeCustom.id, rowId, key, v, num)}
+              onDelRow={(rowId) => removeCustomRow(activeCustom.id, rowId)}
+              onSchemaChange={(cols) => setData(d => ({
+                ...d,
+                customTabs: (d.customTabs || []).map(t => t.id === activeCustom.id ? { ...t, columns: cols } : t),
+              }))}
+            />
           </div>
         )}
       </main>
+
+      {pendingBank.length > 0 && (
+        <div className="modal">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>New accounts found</h2>
+            </div>
+            <p className="auth-text">Tell me what each one is and I'll file it in the right spot — business and personal accounts go to Cash / Owed / Debts, unrelated ones get ignored forever.</p>
+            {pendingBank.map(a => (
+              <div key={a.id} className="classify-row">
+                <div className="classify-info">
+                  <strong>{a.institution || 'Bank'} — {a.name}{a.mask ? ' ··' + a.mask : ''}</strong>
+                  <span>{a.type}{a.subtype ? ' · ' + a.subtype : ''} · {fmt(Math.abs(a.current != null ? a.current : (a.available || 0)))}</span>
+                </div>
+                <div className="classify-btns">
+                  <button className="btn-add small" onClick={() => classifyBank(a, 'business')}>🪟 Window Wizards</button>
+                  <button className="btn-add small" onClick={() => classifyBank(a, 'personal')}>👤 Personal</button>
+                  <button className="auth-skip" onClick={() => classifyBank(a, 'skip')}>Unrelated — skip</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
