@@ -610,6 +610,132 @@
   font-size: 13px;
 }
 
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0a0e27 0%, #1a2847 50%, #0f1a35 100%);
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: linear-gradient(135deg, rgba(26, 31, 58, 0.9) 0%, rgba(42, 49, 82, 0.8) 100%);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 20px;
+  padding: 48px 40px;
+  text-align: center;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 24px 96px rgba(0, 0, 0, 0.4);
+}
+
+.auth-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 8px 0 16px;
+  background: linear-gradient(135deg, #00d9ff 0%, #8338ec 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.auth-text {
+  color: #a8b5d1;
+  font-size: 14px;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+
+.auth-text strong {
+  color: #00d9ff;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.auth-form input {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 8px;
+  padding: 12px 16px;
+  color: #ffffff;
+  font-size: 15px;
+  text-align: center;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: #00d9ff;
+  box-shadow: 0 0 16px rgba(0, 217, 255, 0.2);
+}
+
+.auth-error {
+  color: #ff006e;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.auth-skip {
+  background: none;
+  border: none;
+  color: #5a6b85;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px;
+}
+
+.auth-skip:hover {
+  color: #00d9ff;
+}
+
+.sidebar-foot {
+  margin-top: 32px;
+  padding: 16px 8px 0;
+  border-top: 1px solid rgba(0, 217, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #06ffa5;
+  background: rgba(6, 255, 165, 0.08);
+  border: 1px solid rgba(6, 255, 165, 0.25);
+  border-radius: 12px;
+  padding: 4px 12px;
+}
+
+.sync-badge.local {
+  color: #ffbe0b;
+  background: rgba(255, 190, 11, 0.08);
+  border-color: rgba(255, 190, 11, 0.25);
+}
+
+.sync-badge.err {
+  color: #ff006e;
+  background: rgba(255, 0, 110, 0.08);
+  border-color: rgba(255, 0, 110, 0.25);
+}
+
+.user-email {
+  font-size: 12px;
+  color: #a8b5d1;
+  word-break: break-all;
+  text-align: center;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }

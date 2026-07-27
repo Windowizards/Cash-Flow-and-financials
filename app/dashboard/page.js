@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabaseClient';
 import './dashboard.css';
 
 const SEED = {
@@ -123,18 +124,90 @@ export default function DashboardPage() {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState(SEED);
   const [loaded, setLoaded] = useState(false);
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [localOnly, setLocalOnly] = useState(false);
+  const [email, setEmail] = useState('');
+  const [linkSent, setLinkSent] = useState(false);
+  const [authErr, setAuthErr] = useState('');
+  const [syncState, setSyncState] = useState('');
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('cyberdollar-data-v1');
-      if (saved) setData({ ...SEED, ...JSON.parse(saved) });
-    } catch (e) { /* corrupted save — keep seed */ }
-    setLoaded(true);
+    if (!supabase) {
+      setLocalOnly(true);
+      setAuthChecked(true);
+      return;
+    }
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      setAuthChecked(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (loaded) localStorage.setItem('cyberdollar-data-v1', JSON.stringify(data));
-  }, [data, loaded]);
+    if (!authChecked) return;
+    let local = SEED;
+    try {
+      const saved = localStorage.getItem('cyberdollar-data-v1');
+      if (saved) local = { ...SEED, ...JSON.parse(saved) };
+    } catch (e) { /* corrupted save — keep seed */ }
+
+    if (session && supabase) {
+      supabase.from('finance_data').select('data').eq('user_id', session.user.id).maybeSingle()
+        .then(({ data: row, error }) => {
+          if (row && row.data) {
+            setData({ ...SEED, ...row.data });
+            setSyncState('synced');
+          } else {
+            setData(local);
+            if (error) {
+              setSyncState('error');
+            } else {
+              supabase.from('finance_data')
+                .upsert({ user_id: session.user.id, data: local, updated_at: new Date().toISOString() })
+                .then(({ error: e2 }) => setSyncState(e2 ? 'error' : 'synced'));
+            }
+          }
+          setLoaded(true);
+        });
+    } else {
+      setData(local);
+      setLoaded(true);
+    }
+  }, [authChecked, session]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    localStorage.setItem('cyberdollar-data-v1', JSON.stringify(data));
+    if (session && supabase) {
+      setSyncState('saving');
+      const t = setTimeout(() => {
+        supabase.from('finance_data')
+          .upsert({ user_id: session.user.id, data, updated_at: new Date().toISOString() })
+          .then(({ error }) => setSyncState(error ? 'error' : 'synced'));
+      }, 800);
+      return () => clearTimeout(t);
+    }
+  }, [data, loaded, session]);
+
+  const sendLink = async (e) => {
+    e.preventDefault();
+    setAuthErr('');
+    if (!email.trim()) return;
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin + '/dashboard' },
+    });
+    if (error) setAuthErr(error.message);
+    else setLinkSent(true);
+  };
+
+  const signOut = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+  };
 
   // ---------- Totals ----------
   const totalCash = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
@@ -271,6 +344,35 @@ export default function DashboardPage() {
     });
   };
 
+  if (!authChecked) return <div className="dashboard-container" />;
+
+  if (!session && !localOnly) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="logo-mark">$</div>
+          <h1 className="auth-title">CyberDollar</h1>
+          {linkSent ? (
+            <>
+              <p className="auth-text">Check your email — sign-in link sent to <strong>{email}</strong>. Click it and you'll land back here, signed in.</p>
+              <button className="btn-add" onClick={() => setLinkSent(false)}>Use a different email</button>
+            </>
+          ) : (
+            <>
+              <p className="auth-text">Sign in to sync your numbers across all your devices. No password — we email you a link.</p>
+              <form onSubmit={sendLink} className="auth-form">
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required />
+                <button type="submit" className="btn-add">Email me a sign-in link</button>
+              </form>
+              {authErr && <p className="auth-error">{authErr}</p>}
+              <button className="auth-skip" onClick={() => setLocalOnly(true)}>Skip — use this device only</button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (!loaded) return <div className="dashboard-container" />;
 
   const projection = buildProjection();
@@ -292,6 +394,22 @@ export default function DashboardPage() {
           <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>Big debts</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
         </nav>
+        <div className="sidebar-foot">
+          {session ? (
+            <>
+              <div className={`sync-badge ${syncState === 'error' ? 'err' : ''}`}>
+                {syncState === 'saving' ? 'Saving…' : syncState === 'error' ? 'Sync error' : 'Synced ✓'}
+              </div>
+              <div className="user-email">{session.user.email}</div>
+              <button className="auth-skip" onClick={signOut}>Sign out</button>
+            </>
+          ) : (
+            <>
+              <div className="sync-badge local">This device only</div>
+              {supabase && <button className="auth-skip" onClick={() => setLocalOnly(false)}>Sign in to sync</button>}
+            </>
+          )}
+        </div>
       </aside>
 
       <main className="main-content">
