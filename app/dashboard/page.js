@@ -105,6 +105,7 @@ const SEED = {
     { id: 2, name: 'Chase business 0%', balance: 30000, limit: 29000, promoEnd: '', notes: '' },
   ],
   chinaOrder: [],
+  chinaFunding: [],
   personalPurchases: [],
   goals: [],
   customTabs: [],
@@ -198,6 +199,12 @@ const DEFAULT_SCHEMAS = {
     { key: 'paid', label: 'Paid so far', type: 'number', core: true },
     { key: 'status', label: 'Status', type: 'select', options: ['quoted', 'ordered', 'production', 'shipped', 'customs', 'received'], core: true },
     { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  chinaFunding: [
+    { key: 'card', label: 'From card', type: 'link', core: true },
+    { key: 'amount', label: 'Amount allocated', type: 'number', core: true },
+    { key: 'date', label: 'Date charged', type: 'date' },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   personalPurchases: [
@@ -347,6 +354,7 @@ export default function DashboardPage() {
   const [pwMsg, setPwMsg] = useState('');
   const [affordAmt, setAffordAmt] = useState('');
   const [monthlyFilter, setMonthlyFilter] = useState('all');
+  const [chinaView, setChinaView] = useState('shipments');
   const [qbBusy, setQbBusy] = useState(false);
   const [qbMsg, setQbMsg] = useState('');
   const [qbPeriod, setQbPeriod] = useState('this_month');
@@ -504,6 +512,21 @@ export default function DashboardPage() {
         return next;
       });
       return { ...d, chinaContactFix: true, chinaOrder };
+    });
+  }, [loaded]);
+
+  // One-time safety net: every Jolin item is paid in full. This only runs once —
+  // after that, you have full control to edit paid/amount however you want.
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.chinaJolinFix) return d;
+      const chinaOrder = d.chinaOrder.map(row =>
+        (row.contact || '').trim().toLowerCase() === 'jolin' && (row.paid || 0) < (row.amount || 0)
+          ? { ...row, paid: row.amount || 0 }
+          : row
+      );
+      return { ...d, chinaJolinFix: true, chinaOrder };
     });
   }, [loaded]);
 
@@ -772,10 +795,9 @@ export default function DashboardPage() {
     }
   };
 
-  useEffect(() => {
-    if (loaded && (data.plaidItems || []).length) refreshBalances();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded]);
+  // No auto-refresh on load, by request — Plaid balances and the account
+  // classification prompt only ever fire from an explicit click on
+  // "Connect bank" or "Refresh balances", never automatically on open.
 
   // ---------- Quick actions: full / partial pay + receive ----------
   const moveCash = (accounts, delta) => {
@@ -962,10 +984,17 @@ export default function DashboardPage() {
   const totalZero = (data.zeroCards || []).reduce((s, z) => s + (z.balance || 0), 0);
   const chinaTotal = (data.chinaOrder || []).reduce((s, c) => s + (c.amount || 0), 0);
   const chinaPaid = (data.chinaOrder || []).reduce((s, c) => s + (c.paid || 0), 0);
+  const chinaFunded = (data.chinaFunding || []).reduce((s, c) => s + (c.amount || 0), 0);
   const purchasesPlanned = (data.personalPurchases || []).filter(p => p.status === 'planned').reduce((s, p) => s + (p.amount || 0), 0);
   const purchasesBought = (data.personalPurchases || []).filter(p => p.status === 'bought').reduce((s, p) => s + (p.amount || 0), 0);
   // "counted" toggles — tabs switched off are excluded from every aggregate
-  const cnt = (key) => ((data.tabSettings || {})[key] || {}).counted !== false;
+  // China order is its own environment by default — funded via specific cards
+  // (see Card funding), not double-counted into the main totals unless flipped on.
+  const cnt = (key) => {
+    const setting = ((data.tabSettings || {})[key] || {}).counted;
+    if (setting !== undefined) return setting;
+    return key !== 'china';
+  };
   const setCounted = (key, v) => setData(d => ({
     ...d,
     tabSettings: { ...(d.tabSettings || {}), [key]: { ...((d.tabSettings || {})[key] || {}), counted: v } },
@@ -1857,26 +1886,70 @@ export default function DashboardPage() {
               <input className="job-name title-input" value={tabName('china', 'China order')} onChange={e => setTabName('china', e.target.value)} />
               <div className="job-header-actions">
                 {countToggle('china')}
-                <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
+                {chinaView === 'shipments' && (
+                  <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
+                )}
+                {chinaView === 'funding' && (
+                  <button className="btn-add" onClick={() => addToList('chinaFunding', { card: '', amount: 0, date: '', notes: '' })}>+ Add allocation</button>
+                )}
               </div>
             </div>
-            <p className="subtitle">Track the order line by line — cost, deposits paid, what's left</p>
-            <EditableTable
-              columns={getSchema('chinaOrder')}
-              rows={data.chinaOrder || []}
-              computed={[{
-                label: 'Remaining',
-                fn: (row) => fmt((row.amount || 0) - (row.paid || 0)),
-                className: (row) => (row.amount || 0) - (row.paid || 0) > 0 ? 'spent' : 'daily',
-              }]}
-              onCell={(id, key, v, num) => updateList('chinaOrder', id, key, v, num)}
-              onDelRow={(id) => removeFromList('chinaOrder', id)}
-              onSchemaChange={(cols) => setSchema('chinaOrder', cols)}
-              linkTargets={linkTargets}
-              onJump={jumpTo}
-              rowActions={(row) => payButtons('chinaOrder', row, 'Pay remaining — subtracts from cash', 'Deposit / partial payment — enter amount')}
-              footerExtras={[`Still owed: ${fmt(chinaTotal - chinaPaid)}`]}
-            />
+            <p className="subtitle">
+              This is its own environment{!cnt('china') && ' — off by default'}, funded by specific cards rather than folded into your main cash picture. Flip "counted" on if you'd rather have it hit your Overview and Projection directly.
+            </p>
+
+            <div className="chip-bar">
+              <button className={`chip ${chinaView === 'shipments' ? 'active' : ''}`} onClick={() => setChinaView('shipments')}>Shipments</button>
+              <button className={`chip ${chinaView === 'funding' ? 'active' : ''}`} onClick={() => setChinaView('funding')}>Card funding</button>
+            </div>
+
+            {chinaView === 'shipments' && (
+              <EditableTable
+                columns={getSchema('chinaOrder')}
+                rows={data.chinaOrder || []}
+                computed={[{
+                  label: 'Remaining',
+                  fn: (row) => fmt((row.amount || 0) - (row.paid || 0)),
+                  className: (row) => (row.amount || 0) - (row.paid || 0) > 0 ? 'spent' : 'daily',
+                }]}
+                onCell={(id, key, v, num) => updateList('chinaOrder', id, key, v, num)}
+                onDelRow={(id) => removeFromList('chinaOrder', id)}
+                onSchemaChange={(cols) => setSchema('chinaOrder', cols)}
+                linkTargets={linkTargets}
+                onJump={jumpTo}
+                rowActions={(row) => payButtons('chinaOrder', row, 'Pay remaining — subtracts from cash', 'Deposit / partial payment — enter amount')}
+                footerExtras={[`Still owed: ${fmt(chinaTotal - chinaPaid)}`]}
+              />
+            )}
+
+            {chinaView === 'funding' && (
+              <>
+                <p className="subtitle">Point specific card balances at this order — e.g. "$6,200 of Wells Fargo Signify is China spend." That money is already sitting in Owed/0% cards, so it isn't double-counted here.</p>
+                <div className="projection-info">
+                  <div className="info-box">
+                    <div className="info-label">Order remaining</div>
+                    <div className="info-value">{fmt(chinaTotal - chinaPaid)}</div>
+                  </div>
+                  <div className="info-box">
+                    <div className="info-label">Funded from cards</div>
+                    <div className="info-value">{fmt(chinaFunded)}</div>
+                  </div>
+                  <div className={`info-box ${chinaFunded >= (chinaTotal - chinaPaid) ? '' : 'warning'}`}>
+                    <div className="info-label">Unfunded gap</div>
+                    <div className="info-value">{fmt(Math.max(0, (chinaTotal - chinaPaid) - chinaFunded))}</div>
+                  </div>
+                </div>
+                <EditableTable
+                  columns={getSchema('chinaFunding')}
+                  rows={data.chinaFunding || []}
+                  onCell={(id, key, v, num) => updateList('chinaFunding', id, key, v, num)}
+                  onDelRow={(id) => removeFromList('chinaFunding', id)}
+                  onSchemaChange={(cols) => setSchema('chinaFunding', cols)}
+                  linkTargets={linkTargets}
+                  onJump={jumpTo}
+                />
+              </>
+            )}
           </div>
         )}
 
