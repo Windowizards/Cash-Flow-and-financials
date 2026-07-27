@@ -1,0 +1,111 @@
+.timeline {
+  position: relative;
+}
+
+.timeline-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.timeline-day {
+  margin-bottom: 32px;
+}
+
+.timeline-date {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-left: 28px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.timeline-events {
+  position: relative;
+}
+
+.timeline-events::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.timeline-item {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.timeline-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--primary);
+  position: relative;
+  top: 6px;
+  flex-shrink: 0;
+  border: 2px solid var(--bg-secondary);
+}
+
+.timeline-item.income .timeline-marker {
+  background: var(--success);
+}
+
+.timeline-item.expense .timeline-marker {
+  background: var(--danger);
+}
+
+.timeline-item.tax .timeline-marker {
+  background: var(--warning);
+}
+
+.timeline-content {
+  flex: 1;
+  background: var(--bg-tertiary);
+  padding: 12px 16px;
+  border-radius: 6px;
+  border-left: 3px solid var(--primary);
+}
+
+.timeline-item.income .timeline-content {
+  border-left-color: var(--success);
+}
+
+.timeline-item.expense .timeline-content {
+  border-left-color: var(--danger);
+}
+
+.timeline-item.tax .timeline-content {
+  border-left-color: var(--warning);
+}
+
+.timeline-content h4 {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.timeline-amount {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.timeline-amount.income {
+  color: var(--success);
+}
+
+.timeline-amount.expense {
+  color: var(--danger);
+}
+
+.timeline-amount.tax {
+  color: var(--warning);
+}
