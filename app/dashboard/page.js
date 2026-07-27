@@ -108,6 +108,7 @@ const SEED = {
   chinaFunding: [],
   personalPurchases: [],
   goals: [],
+  savingsBuckets: [],
   customTabs: [],
   history: [],
   plaidItems: [],
@@ -164,6 +165,7 @@ const DEFAULT_SCHEMAS = {
   ],
   cards: [
     { key: 'name', label: 'Name', type: 'text', core: true },
+    { key: 'group', label: 'Group', type: 'select', options: ['credit card', 'person', 'business'], core: true },
     { key: 'amount', label: 'Amount', type: 'number', core: true },
     { key: 'close', label: 'Statement close', type: 'text' },
     { key: 'due', label: 'Due date', type: 'text', core: true },
@@ -228,6 +230,14 @@ const DEFAULT_SCHEMAS = {
     { key: 'target', label: 'Target', type: 'number', core: true },
     { key: 'saved', label: 'Saved so far', type: 'number', core: true, pctOf: 'target' },
     { key: 'date', label: 'Target date', type: 'date' },
+    { key: 'link', label: 'Link', type: 'link' },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  savingsBuckets: [
+    { key: 'name', label: 'Bucket', type: 'text', core: true },
+    { key: 'amount', label: 'Set aside', type: 'number', core: true, pctOf: 'target' },
+    { key: 'target', label: 'Target', type: 'number', core: true },
+    { key: 'date', label: 'By when', type: 'date' },
     { key: 'link', label: 'Link', type: 'link' },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
@@ -398,6 +408,7 @@ export default function DashboardPage() {
   const [affordAmt, setAffordAmt] = useState('');
   const [monthlyFilter, setMonthlyFilter] = useState('all');
   const [chinaView, setChinaView] = useState('shipments');
+  const [owedFilter, setOwedFilter] = useState('all');
   const [qbBusy, setQbBusy] = useState(false);
   const [qbMsg, setQbMsg] = useState('');
   const [qbPeriod, setQbPeriod] = useState('this_month');
@@ -570,6 +581,49 @@ export default function DashboardPage() {
           : row
       );
       return { ...d, chinaJolinFix: true, chinaOrder };
+    });
+  }, [loaded]);
+
+  // One-time: sort existing Owed rows into groups (credit cards / people / business)
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.owedGroupsFix) return d;
+      const CARD_WORDS = /amex|plat\b|plat |platinum|gold|chase|noelle|visa|card|citi|wells|discover|capital one/i;
+      const PEOPLE_WORDS = /^(luke|jerry|marcus|kai|vicki|stu|julio|perez|jer|noah)$|squeegee|crew/i;
+      const cards = d.cards.map(row => {
+        if (row.group) return row;
+        const name = (row.name || '').trim();
+        const group = row.plaidId || CARD_WORDS.test(name) ? 'credit card'
+          : PEOPLE_WORDS.test(name) ? 'person'
+          : 'business';
+        return { ...row, group };
+      });
+      return { ...d, owedGroupsFix: true, cards };
+    });
+  }, [loaded]);
+
+  // One-time: savings buckets are not debts — move any bucket-looking rows out
+  // of Owed (and 0% cards) into their own Savings buckets tab.
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.savingsBucketsFix) return d;
+      const isBucket = r => /saving|bucket/i.test(r.name || '');
+      const fromCards = d.cards.filter(isBucket);
+      const fromZero = (d.zeroCards || []).filter(isBucket);
+      if (!fromCards.length && !fromZero.length) return { ...d, savingsBucketsFix: true };
+      return {
+        ...d,
+        savingsBucketsFix: true,
+        cards: d.cards.filter(r => !isBucket(r)),
+        zeroCards: (d.zeroCards || []).filter(r => !isBucket(r)),
+        savingsBuckets: [
+          ...(d.savingsBuckets || []),
+          ...fromCards.map(r => ({ id: r.id, name: r.name, amount: r.amount || 0, target: 0, date: '', link: r.link, notes: r.notes || '' })),
+          ...fromZero.map(r => ({ id: r.id, name: r.name, amount: r.balance || 0, target: 0, date: '', link: r.link, notes: r.notes || '' })),
+        ],
+      };
     });
   }, [loaded]);
 
@@ -765,7 +819,7 @@ export default function DashboardPage() {
         }
         if (acct.type === 'credit') {
           const bal = Math.abs(acct.current != null ? acct.current : (acct.available || 0));
-          return { ...d, cards: [...d.cards, { ...base, name: label, amount: bal, close: '', due: '' }] };
+          return { ...d, cards: [...d.cards, { ...base, name: label, amount: bal, close: '', due: '', group: 'credit card' }] };
         }
         if (acct.type === 'loan') {
           return { ...d, debts: [...d.debts, { ...base, name: label, amount: Math.abs(acct.current || 0), limit: acct.limit || 0 }] };
@@ -960,7 +1014,7 @@ export default function DashboardPage() {
       zeroCards: (d.zeroCards || []).filter(x => x.id !== row.id),
       cards: [...d.cards, {
         id: Date.now(), plaidId: row.plaidId, name: row.name, amount: row.balance || 0,
-        close: '', due: '', bucket: row.bucket, link: row.link, notes: row.notes || '',
+        close: '', due: '', bucket: row.bucket, link: row.link, notes: row.notes || '', group: 'credit card',
       }],
     }));
   };
@@ -969,7 +1023,7 @@ export default function DashboardPage() {
   const LINK_SOURCES = [
     ['incoming', 'Incoming'], ['cards', 'Owed'], ['accounts', 'Cash'], ['monthly', 'Monthly'],
     ['zeroCards', '0% card'], ['chinaOrder', 'China'], ['personalPurchases', 'Purchase'],
-    ['debts', 'Debt'], ['goals', 'Goal'],
+    ['debts', 'Debt'], ['goals', 'Goal'], ['savingsBuckets', 'Bucket'],
   ];
   const linkTargets = [
     ...LINK_SOURCES.flatMap(([k, label]) =>
@@ -986,7 +1040,7 @@ export default function DashboardPage() {
     const map = {
       accounts: 'cash', cards: 'owed', incoming: 'incoming', monthly: 'monthly',
       zeroCards: 'zero', chinaOrder: 'china', personalPurchases: 'purchases',
-      debts: 'debts', goals: 'goals',
+      debts: 'debts', goals: 'goals', savingsBuckets: 'savings',
     };
     if (k === 'jobs') {
       setTab('payroll');
@@ -1036,6 +1090,7 @@ export default function DashboardPage() {
   const chinaTotal = (data.chinaOrder || []).reduce((s, c) => s + (c.amount || 0), 0);
   const chinaPaid = (data.chinaOrder || []).reduce((s, c) => s + (c.paid || 0), 0);
   const chinaFunded = (data.chinaFunding || []).reduce((s, c) => s + (c.amount || 0), 0);
+  const savingsTotal = (data.savingsBuckets || []).reduce((s, b) => s + (b.amount || 0), 0);
   const purchasesPlanned = (data.personalPurchases || []).filter(p => p.status === 'planned').reduce((s, p) => s + (p.amount || 0), 0);
   const purchasesBought = (data.personalPurchases || []).filter(p => p.status === 'bought').reduce((s, p) => s + (p.amount || 0), 0);
   // "counted" toggles — tabs switched off are excluded from every aggregate
@@ -1344,11 +1399,7 @@ export default function DashboardPage() {
   };
 
   // ---------- Projection ----------
-  const buildProjection = () => {
-    const HORIZON = 120;
-    const today = new Date();
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-
+  const buildEvents = (HORIZON, startOfToday) => {
     const events = [];
     if (cnt('owed')) data.cards.forEach(c => {
       if (!c.amount) return;
@@ -1377,6 +1428,14 @@ export default function DashboardPage() {
         events.push({ day: dayOffset, name: `${i.name} pays`, amount: i.amount, sign: 1 });
       }
     });
+    return events;
+  };
+
+  const buildProjection = () => {
+    const HORIZON = 120;
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const events = buildEvents(HORIZON, startOfToday);
 
     const milestones = new Set([0, 7, 14, 21, 30, 45, 60, 90, 120]);
     events.forEach(e => milestones.add(e.day));
@@ -1426,6 +1485,48 @@ export default function DashboardPage() {
   if (!loaded) return <div className="dashboard-container" />;
 
   const projection = buildProjection();
+
+  // ---------- Urgency: what's coming in the next 30 days ----------
+  const nowD = new Date();
+  const todayStart = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate());
+  const upNext = (() => {
+    const ev = buildEvents(30, todayStart);
+    if (cnt('monthly')) data.monthly.forEach(m => {
+      if (!m.amount || !m.dueDay) return;
+      let d = new Date(todayStart.getFullYear(), todayStart.getMonth(), m.dueDay);
+      if (d < todayStart) d = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, m.dueDay);
+      const day = Math.round((d - todayStart) / 86400000);
+      if (day <= 30) ev.push({ day, name: `${m.name || 'bill'} (monthly)`, amount: m.amount, sign: -1 });
+    });
+    return ev.sort((a, b) => a.day - b.day).slice(0, 25);
+  })();
+
+  const daysUntilDue = (dueStr) => {
+    const d = nextDue(dueStr);
+    if (!d) return null;
+    return Math.round((d - todayStart) / 86400000);
+  };
+
+  const dueInComputed = {
+    label: 'Due in',
+    fn: (row) => {
+      const days = daysUntilDue(row.due);
+      if (days == null) return '—';
+      return days <= 0 ? 'TODAY' : days + 'd';
+    },
+    className: (row) => {
+      const days = daysUntilDue(row.due);
+      if (days == null || !(row.amount > 0)) return 'utilization';
+      return days <= 7 ? 'g-neg' : days <= 30 ? 'spent' : 'daily';
+    },
+  };
+
+  const owedDueWithin = (days) => data.cards.reduce((s, c) => {
+    const dd = daysUntilDue(c.due);
+    return dd != null && dd <= days ? s + (c.amount || 0) : s;
+  }, 0);
+
+  const OWED_GROUPS = [['credit card', 'Credit cards'], ['person', 'People'], ['business', 'Business']];
   const activeCustom = tab.startsWith('custom-')
     ? (data.customTabs || []).find(t => `custom-${t.id}` === tab)
     : null;
@@ -1492,6 +1593,7 @@ export default function DashboardPage() {
           <button className={`nav-btn ${tab === 'goals' ? 'active' : ''}`} onClick={() => setTab('goals')}>{tabName('goals', 'Goals')}</button>
           <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>{tabName('debts', 'Big debts')}</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
+          <button className={`nav-btn ${tab === 'savings' ? 'active' : ''}`} onClick={() => setTab('savings')}>{tabName('savings', 'Savings buckets')}</button>
           <button className={`nav-btn ${tab === 'quickbooks' ? 'active' : ''}`} onClick={() => setTab('quickbooks')}>QuickBooks</button>
           {(data.customTabs || []).map(t => (
             <button key={t.id} className={`nav-btn custom ${tab === `custom-${t.id}` ? 'active' : ''}`} onClick={() => setTab(`custom-${t.id}`)}>
@@ -1574,6 +1676,23 @@ export default function DashboardPage() {
                 <div className="metric-value">{fmt(trueNet)}</div>
                 <div className="metric-subtext">cash + AR − owed − 0% − debts − china</div>
               </div>
+            </div>
+
+            <div className="quick-summary">
+              <h3>Coming up — next 30 days</h3>
+              {upNext.length === 0 && <p className="history-line">Nothing scheduled in the next 30 days. Add due dates on Owed, expected dates on Incoming, or due days on Monthly to build your timeline.</p>}
+              {upNext.map((e, i) => (
+                <div key={i} className="upnext-row">
+                  <span className={`upnext-day ${e.day <= 7 && e.sign !== 1 ? 'urgent' : ''}`}>{e.day === 0 ? 'today' : `+${e.day}d`}</span>
+                  <span className="upnext-name">{e.name}</span>
+                  <span className={`upnext-amt ${e.sign === 1 ? 'g-pos' : 'g-neg'}`}>{e.sign === 1 ? '+' : '−'}{fmt(e.amount)}</span>
+                </div>
+              ))}
+              {upNext.length > 0 && (
+                <p className="projection-note">
+                  Scheduled net over 30 days: <strong>{fmt(upNext.reduce((s, e) => s + e.amount * (e.sign || -1), 0))}</strong> · full curve on the Projection tab
+                </p>
+              )}
             </div>
 
             <div className="quick-summary">
@@ -1681,26 +1800,62 @@ export default function DashboardPage() {
               <input className="job-name title-input" value={tabName('owed', 'Owed now')} onChange={e => setTabName('owed', e.target.value)} />
               <div className="job-header-actions">
                 {countToggle('owed')}
-                <button className="btn-add" onClick={() => addToList('cards', { name: '', amount: 0, close: '', due: '', notes: '' })}>+ Add row</button>
               </div>
             </div>
-            <p className="subtitle">Credit cards, crew payments, bills — everything currently due</p>
-            <EditableTable
-              columns={getSchema('cards')}
-              rows={data.cards}
-              onCell={(id, key, v, num) => updateList('cards', id, key, v, num)}
-              onDelRow={(id) => removeFromList('cards', id)}
-              onSchemaChange={(cols) => setSchema('cards', cols)}
-              linkTargets={linkTargets}
-              onJump={jumpTo}
-              rowActions={(row) => (
-                <>
-                  {payButtons('cards', row, 'Fully paid — subtracts from cash', 'Partial payment — enter how much you paid')}
-                  <button className="act-btn zero" title="Move to 0% cards tab" onClick={() => moveToZero(row)}>0%</button>
-                </>
-              )}
-              footerExtras={[`Cash − owed: ${fmt(netNow)}`]}
-            />
+            <p className="subtitle">Everything currently due, sorted by who you owe — with urgency countdowns</p>
+
+            <div className="chip-bar">
+              <button className={`chip ${owedFilter === 'all' ? 'active' : ''}`} onClick={() => setOwedFilter('all')}>All</button>
+              {OWED_GROUPS.map(([g, label]) => (
+                <button key={g} className={`chip ${owedFilter === g ? 'active' : ''}`} onClick={() => setOwedFilter(g)}>{label}</button>
+              ))}
+            </div>
+
+            <div className="projection-info">
+              <div className="info-box">
+                <div className="info-label">Total owed</div>
+                <div className="info-value">{fmt(totalOwed)}</div>
+              </div>
+              <div className="info-box">
+                <div className="info-label">Due next 7 days</div>
+                <div className="info-value">{fmt(owedDueWithin(7))}</div>
+              </div>
+              <div className="info-box">
+                <div className="info-label">Due next 30 days</div>
+                <div className="info-value">{fmt(owedDueWithin(30))}</div>
+              </div>
+            </div>
+
+            {OWED_GROUPS
+              .filter(([g]) => owedFilter === 'all' || owedFilter === g)
+              .map(([g, label]) => {
+                const rows = data.cards.filter(c => (c.group || 'business') === g);
+                return (
+                  <div key={g} className="sub-section">
+                    <div className="sub-section-header">
+                      <h3 className="sub-title">{label} — {fmt(rows.reduce((s, c) => s + (c.amount || 0), 0))}</h3>
+                      <button className="btn-add small" onClick={() => addToList('cards', { name: '', amount: 0, close: '', due: '', notes: '', group: g })}>+ Add to {label.toLowerCase()}</button>
+                    </div>
+                    <EditableTable
+                      columns={getSchema('cards')}
+                      rows={rows}
+                      computed={[dueInComputed]}
+                      onCell={(id, key, v, num) => updateList('cards', id, key, v, num)}
+                      onDelRow={(id) => removeFromList('cards', id)}
+                      onSchemaChange={(cols) => setSchema('cards', cols)}
+                      linkTargets={linkTargets}
+                      onJump={jumpTo}
+                      rowActions={(row) => (
+                        <>
+                          {payButtons('cards', row, 'Fully paid — subtracts from cash', 'Partial payment — enter how much you paid')}
+                          {g === 'credit card' && <button className="act-btn zero" title="Move to 0% cards tab" onClick={() => moveToZero(row)}>0%</button>}
+                        </>
+                      )}
+                    />
+                  </div>
+                );
+              })}
+            <p className="projection-note">Cash − owed: <strong>{fmt(netNow)}</strong></p>
           </div>
         )}
 
@@ -2165,6 +2320,12 @@ export default function DashboardPage() {
                 <div className="info-label">If all AR collects</div>
                 <div className="info-value">{fmt(projected)}</div>
               </div>
+              {savingsTotal > 0 && (
+                <div className="info-box">
+                  <div className="info-label">Earmarked in buckets</div>
+                  <div className="info-value">{fmt(savingsTotal)}</div>
+                </div>
+              )}
             </div>
 
             <div className="timeline-container">
@@ -2196,6 +2357,31 @@ export default function DashboardPage() {
               </table>
               <p className="projection-note">Incoming AR only counts here when it has an expected date set (Incoming tab). AR without a date ({fmt(data.incoming.filter(i => !i.expected).reduce((s, i) => s + (i.amount || 0), 0))}) is upside not shown.</p>
             </div>
+          </div>
+        )}
+
+        {/* ============ SAVINGS BUCKETS ============ */}
+        {tab === 'savings' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <input className="job-name title-input" value={tabName('savings', 'Savings buckets')} onChange={e => setTabName('savings', e.target.value)} />
+              <button className="btn-add" onClick={() => addToList('savingsBuckets', { name: '', amount: 0, target: 0, date: '', notes: '' })}>+ Add bucket</button>
+            </div>
+            <p className="subtitle">Money you're earmarking — its own environment, never counted as owed and never in your totals or projection. Type "25%" in Set aside to take a percentage of target.</p>
+            <EditableTable
+              columns={getSchema('savingsBuckets')}
+              rows={data.savingsBuckets || []}
+              computed={[{
+                label: 'Progress',
+                fn: (row) => row.target > 0 ? Math.min(100, Math.round(((row.amount || 0) / row.target) * 100)) + '%' : '—',
+                className: (row) => row.target > 0 && (row.amount || 0) >= row.target ? 'daily' : 'utilization',
+              }]}
+              onCell={(id, key, v, num) => updateList('savingsBuckets', id, key, v, num)}
+              onDelRow={(id) => removeFromList('savingsBuckets', id)}
+              onSchemaChange={(cols) => setSchema('savingsBuckets', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+            />
           </div>
         )}
 
