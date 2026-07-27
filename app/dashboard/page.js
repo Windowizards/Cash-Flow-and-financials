@@ -193,6 +193,7 @@ const DEFAULT_SCHEMAS = {
   ],
   chinaOrder: [
     { key: 'name', label: 'Item', type: 'text', core: true },
+    { key: 'contact', label: 'Contact', type: 'text' },
     { key: 'amount', label: 'Total cost', type: 'number', core: true },
     { key: 'paid', label: 'Paid so far', type: 'number', core: true },
     { key: 'status', label: 'Status', type: 'select', options: ['quoted', 'ordered', 'production', 'shipped', 'customs', 'received'], core: true },
@@ -450,6 +451,59 @@ export default function DashboardPage() {
           };
         });
       return { ...d, chinaOrderImported: true, chinaOrder: [...d.chinaOrder, ...toAdd] };
+    });
+  }, [loaded]);
+
+  // One-time: give China order rows a real Contact field, and mark the 30% deposit
+  // as already paid on every Bruce item (per the shipment tracker's deposit column)
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.chinaContactFix) return d;
+      const ref = {
+        'c9 spool': { contact: '', source: 'China', deposit: 3473 },
+        'magnet c9 spool': { contact: 'Bruce', source: 'China', deposit: 814 },
+        'zip wire 500 feet': { contact: '', source: 'China', deposit: 3825 },
+        '15k male / 20k female / 10k middle': { contact: 'Bruce', source: 'China', deposit: 4425 },
+        'end caps clear plastic': { contact: 'Bruce', source: 'China', deposit: 240 },
+        'stakes': { contact: 'Bruce', source: 'China', deposit: 572 },
+        'c9 orange': { contact: 'Bruce', source: 'China', deposit: 885 },
+        'c9 purple': { contact: 'Bruce', source: 'China', deposit: 885 },
+        'c9 green': { contact: 'Bruce', source: 'China', deposit: 1770 },
+        'c9 red': { contact: 'Bruce', source: 'China', deposit: 1770 },
+        'c9 ww 3000k': { contact: 'Bruce', source: 'China', deposit: 5310 },
+        'c9 5-multi': { contact: 'Bruce', source: 'China', deposit: 2213 },
+        'ww minis 3000k': { contact: 'Bruce', source: 'China', deposit: 7500 },
+        'red minis': { contact: 'Bruce', source: 'China', deposit: 1125 },
+        'green minis': { contact: 'Bruce', source: 'China', deposit: 1125 },
+        'pure white minis': { contact: 'Bruce', source: 'China', deposit: 900 },
+        'multi-5 minis': { contact: 'Bruce', source: 'China', deposit: 1500 },
+        'mechanical timer': { contact: 'Bruce', source: 'China', deposit: 1020 },
+        'photocell timer': { contact: 'Bruce', source: 'China', deposit: 264 },
+        'digital timer': { contact: 'Bruce', source: 'China', deposit: 818 },
+        'wreath 36" ww': { contact: 'Bruce', source: 'China', deposit: 529 },
+        'garland': { contact: 'Bruce', source: 'China', deposit: 669 },
+        'yard signs': { contact: 'Jolin', source: 'China', deposit: 0 },
+        'brochures': { contact: 'Jolin', source: 'China', deposit: 0 },
+        'samples (mini & c9)': { contact: 'Bruce', source: 'China', deposit: 0 },
+        'clips': { contact: '', source: 'Halo clips', deposit: 3315 },
+      };
+      const chinaOrder = d.chinaOrder.map(row => {
+        const info = ref[(row.name || '').trim().toLowerCase()];
+        if (!info) return row;
+        const next = { ...row, contact: row.contact || info.contact };
+        // Bruce items: the 30% deposit has already been paid — bump paid up to
+        // at least the deposit amount without clobbering any larger payment.
+        if (info.contact === 'Bruce' && info.deposit > 0 && (next.paid || 0) < info.deposit) {
+          next.paid = info.deposit;
+        }
+        const bits = [];
+        if (info.source !== 'China') bits.push(`Source: ${info.source}`);
+        const cleanedNotes = (row.notes || '').replace(/Contact:\s*\w+\s*·?\s*/i, '').replace(/Paid in full\s*·?\s*/i, '').trim();
+        next.notes = [...bits, cleanedNotes].filter(Boolean).join(' · ');
+        return next;
+      });
+      return { ...d, chinaContactFix: true, chinaOrder };
     });
   }, [loaded]);
 
