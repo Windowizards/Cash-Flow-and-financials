@@ -98,6 +98,8 @@ const SEED = {
   chinaOrder: [],
   personalPurchases: [],
   customTabs: [],
+  history: [],
+  plaidItems: [],
   debts: [
     { id: 1, name: 'Mom', amount: 40000, limit: 0, notes: '' },
     { id: 4, name: 'Travel', amount: 20000, limit: 0, notes: '' },
@@ -157,6 +159,7 @@ export default function DashboardPage() {
   const [showPwForm, setShowPwForm] = useState(false);
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
+  const [affordAmt, setAffordAmt] = useState('');
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetMsg, setSheetMsg] = useState('');
 
@@ -267,58 +270,62 @@ export default function DashboardPage() {
     setSession(null);
   };
 
-  // ---------- Teller bank connections ----------
-  const TELLER_APP_ID = process.env.NEXT_PUBLIC_TELLER_APP_ID;
-  const TELLER_ENV = process.env.NEXT_PUBLIC_TELLER_ENV || 'sandbox';
+  // ---------- Plaid bank connections ----------
   const [bankBusy, setBankBusy] = useState(false);
   const [bankErr, setBankErr] = useState('');
 
-  const loadTellerScript = () => new Promise((resolve, reject) => {
-    if (typeof window !== 'undefined' && window.TellerConnect) return resolve();
+  const loadPlaidScript = () => new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && window.Plaid) return resolve();
     const s = document.createElement('script');
-    s.src = 'https://cdn.teller.io/connect/connect.js';
+    s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
     s.onload = resolve;
-    s.onerror = () => reject(new Error('Could not load Teller Connect'));
+    s.onerror = () => reject(new Error('Could not load Plaid Link'));
     document.head.appendChild(s);
   });
 
-  const applyTellerAccounts = (list) => {
+  const applyBankAccounts = (list, institution) => {
     setData(d => {
       const accounts = [...d.accounts];
       const cards = [...d.cards];
+      const debts = [...d.debts];
       list.forEach(t => {
-        const label = `${t.institution || 'Bank'} ${t.name}${t.last_four ? ' ··' + t.last_four : ''}`;
+        const label = `${institution || 'Bank'} ${t.name}${t.mask ? ' ··' + t.mask : ''}`;
         if (t.type === 'credit') {
-          const bal = Math.abs(t.ledger != null ? t.ledger : (t.available || 0));
-          const i = cards.findIndex(c => c.tellerId === t.id);
+          const bal = Math.abs(t.current != null ? t.current : (t.available || 0));
+          const i = cards.findIndex(c => c.plaidId === t.id);
           if (i >= 0) cards[i] = { ...cards[i], amount: bal };
-          else cards.push({ id: Date.now() + Math.floor(Math.random() * 1000), tellerId: t.id, name: label, amount: bal, close: '', due: '', notes: 'live' });
+          else cards.push({ id: Date.now() + Math.floor(Math.random() * 1000), plaidId: t.id, name: label, amount: bal, close: '', due: '', notes: 'live' });
+        } else if (t.type === 'loan') {
+          const bal = Math.abs(t.current || 0);
+          const i = debts.findIndex(x => x.plaidId === t.id);
+          if (i >= 0) debts[i] = { ...debts[i], amount: bal };
+          else debts.push({ id: Date.now() + Math.floor(Math.random() * 1000), plaidId: t.id, name: label, amount: bal, limit: t.limit || 0, notes: 'live' });
         } else {
-          const bal = t.available != null ? t.available : (t.ledger || 0);
-          const i = accounts.findIndex(a => a.tellerId === t.id);
+          const bal = t.available != null ? t.available : (t.current || 0);
+          const i = accounts.findIndex(a => a.plaidId === t.id);
           if (i >= 0) accounts[i] = { ...accounts[i], balance: bal };
-          else accounts.push({ id: Date.now() + Math.floor(Math.random() * 1000), tellerId: t.id, name: label, balance: bal, notes: 'live' });
+          else accounts.push({ id: Date.now() + Math.floor(Math.random() * 1000), plaidId: t.id, name: label, balance: bal, notes: 'live' });
         }
       });
-      return { ...d, accounts, cards, tellerLastSync: new Date().toISOString() };
+      return { ...d, accounts, cards, debts, bankLastSync: new Date().toISOString() };
     });
   };
 
-  const refreshBalances = async (tokens) => {
-    const enrollments = tokens || (data.tellerEnrollments || []).map(e => e.accessToken);
-    if (!enrollments.length) return;
+  const refreshBalances = async (items) => {
+    const list = items || data.plaidItems || [];
+    if (!list.length) return;
     setBankBusy(true);
     setBankErr('');
     try {
-      for (const token of enrollments) {
-        const res = await fetch('/api/teller/accounts', {
+      for (const item of list) {
+        const res = await fetch('/api/plaid/balances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ token: item.accessToken }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'refresh failed');
-        applyTellerAccounts(json);
+        applyBankAccounts(json, item.institution);
       }
     } catch (e) {
       setBankErr(String(e.message || e));
@@ -328,30 +335,35 @@ export default function DashboardPage() {
 
   const connectBank = async () => {
     setBankErr('');
-    if (!TELLER_APP_ID) {
-      setBankErr('Teller application ID not configured yet');
-      return;
-    }
     setBankBusy(true);
     try {
-      await loadTellerScript();
-      const connect = window.TellerConnect.setup({
-        applicationId: TELLER_APP_ID,
-        environment: TELLER_ENV,
-        products: ['balance'],
-        onSuccess: (enrollment) => {
-          setData(d => ({
-            ...d,
-            tellerEnrollments: [
-              ...(d.tellerEnrollments || []),
-              { accessToken: enrollment.accessToken, institution: enrollment.enrollment && enrollment.enrollment.institution && enrollment.enrollment.institution.name },
-            ],
-          }));
-          refreshBalances([enrollment.accessToken]);
+      const r = await fetch('/api/plaid/create-link-token', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Plaid not configured yet');
+      await loadPlaidScript();
+      const handler = window.Plaid.create({
+        token: j.link_token,
+        onSuccess: async (public_token, metadata) => {
+          try {
+            const ex = await fetch('/api/plaid/exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ public_token }),
+            });
+            const ej = await ex.json();
+            if (!ex.ok) throw new Error(ej.error || 'exchange failed');
+            const inst = metadata && metadata.institution && metadata.institution.name;
+            const newItem = { accessToken: ej.access_token, institution: inst || '' };
+            setData(d => ({ ...d, plaidItems: [...(d.plaidItems || []), newItem] }));
+            refreshBalances([newItem]);
+          } catch (e) {
+            setBankErr(String(e.message || e));
+            setBankBusy(false);
+          }
         },
         onExit: () => setBankBusy(false),
       });
-      connect.open();
+      handler.open();
     } catch (e) {
       setBankErr(String(e.message || e));
       setBankBusy(false);
@@ -359,9 +371,62 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (loaded && (data.tellerEnrollments || []).length) refreshBalances();
+    if (loaded && (data.plaidItems || []).length) refreshBalances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
+
+  // ---------- Quick actions: collect AR / pay bill ----------
+  const collectIncoming = (row) => {
+    setData(d => {
+      const accounts = [...d.accounts];
+      if (accounts.length) accounts[0] = { ...accounts[0], balance: (accounts[0].balance || 0) + (row.amount || 0) };
+      return {
+        ...d,
+        accounts,
+        incoming: d.incoming.filter(x => x.id !== row.id),
+        history: [{ id: Date.now(), date: new Date().toISOString(), kind: 'collected', name: row.name, amount: row.amount || 0 }, ...(d.history || [])].slice(0, 50),
+      };
+    });
+  };
+
+  const payOwed = (row) => {
+    setData(d => {
+      const accounts = [...d.accounts];
+      if (accounts.length) accounts[0] = { ...accounts[0], balance: (accounts[0].balance || 0) - (row.amount || 0) };
+      return {
+        ...d,
+        accounts,
+        cards: d.cards.filter(x => x.id !== row.id),
+        history: [{ id: Date.now(), date: new Date().toISOString(), kind: 'paid', name: row.name, amount: row.amount || 0 }, ...(d.history || [])].slice(0, 50),
+      };
+    });
+  };
+
+  // ---------- Backup / restore ----------
+  const downloadBackup = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cyberdollar-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const restoreBackup = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        setData({ ...SEED, ...parsed });
+      } catch (err) {
+        alert('That file is not a valid CyberDollar backup');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   // ---------- Totals ----------
   const totalCash = data.accounts.reduce((s, a) => s + (a.balance || 0), 0);
@@ -378,6 +443,8 @@ export default function DashboardPage() {
   const netNow = totalCash - totalOwed;
   const projected = netNow + totalIncoming;
   const runwayDays = dailyBurn > 0 ? Math.floor(netNow / dailyBurn) : Infinity;
+  const chinaRemaining = chinaTotal - chinaPaid;
+  const trueNet = totalCash + totalIncoming - totalOwed - totalZero - totalDebts - chinaRemaining;
 
   const bizMonthly = data.monthly.filter(e => e.type === 'business');
   const persMonthly = data.monthly.filter(e => e.type === 'personal');
@@ -561,7 +628,7 @@ export default function DashboardPage() {
           if (Array.isArray(json.data[k]) && json.data[k].length) {
             next[k] = json.data[k].map((row, i) => {
               const r = { ...row, id: Date.now() + i };
-              ['amount', 'balance', 'limit', 'paid', 'dueDay'].forEach(f => {
+              ['amount', 'balance', 'limit', 'paid', 'dueDay', 'cost'].forEach(f => {
                 if (r[f] !== undefined && r[f] !== '') r[f] = parseFloat(r[f]) || 0;
               });
               return r;
@@ -590,7 +657,7 @@ export default function DashboardPage() {
       if (!d) return;
       const dayOffset = Math.round((d - startOfToday) / 86400000);
       if (dayOffset >= 0 && dayOffset <= HORIZON) {
-        events.push({ day: dayOffset, name: `${c.name} due`, amount: c.amount });
+        events.push({ day: dayOffset, name: `${c.name} due`, amount: c.amount, sign: -1 });
       }
     });
     (data.personalPurchases || []).forEach(p => {
@@ -599,7 +666,16 @@ export default function DashboardPage() {
       if (isNaN(d)) return;
       const dayOffset = Math.round((d - startOfToday) / 86400000);
       if (dayOffset >= 0 && dayOffset <= HORIZON) {
-        events.push({ day: dayOffset, name: `${p.name || 'purchase'}`, amount: p.amount });
+        events.push({ day: dayOffset, name: `${p.name || 'purchase'}`, amount: p.amount, sign: -1 });
+      }
+    });
+    data.incoming.forEach(i => {
+      if (!i.amount || !i.expected) return;
+      const d = new Date(i.expected + 'T00:00:00');
+      if (isNaN(d)) return;
+      const dayOffset = Math.round((d - startOfToday) / 86400000);
+      if (dayOffset >= 0 && dayOffset <= HORIZON) {
+        events.push({ day: dayOffset, name: `${i.name} pays`, amount: i.amount, sign: 1 });
       }
     });
 
@@ -610,8 +686,8 @@ export default function DashboardPage() {
     return days.map(day => {
       const date = new Date(startOfToday);
       date.setDate(date.getDate() + day);
-      const duesSoFar = events.filter(e => e.day <= day).reduce((s, e) => s + e.amount, 0);
-      const cash = totalCash - dailyBurn * day - duesSoFar;
+      const flowSoFar = events.filter(e => e.day <= day).reduce((s, e) => s + e.amount * (e.sign || -1), 0);
+      const cash = totalCash - dailyBurn * day + flowSoFar;
       const todaysEvents = events.filter(e => e.day === day);
       return { day, date, cash, events: todaysEvents };
     });
@@ -792,7 +868,42 @@ export default function DashboardPage() {
                 <div className="metric-value">{fmt2(dailyBurn)}</div>
                 <div className="metric-subtext">{fmt(totalMonthly)}/mo fixed · {runwayDays === Infinity ? '∞' : runwayDays} days runway</div>
               </div>
+              <div className={`metric-card ${trueNet >= 0 ? 'success' : 'danger'}`}>
+                <div className="metric-label">True net — everything counted</div>
+                <div className="metric-value">{fmt(trueNet)}</div>
+                <div className="metric-subtext">cash + AR − owed − 0% − debts − china</div>
+              </div>
             </div>
+
+            <div className="quick-summary">
+              <h3>Everything at a glance</h3>
+              <table className="glance-table">
+                <tbody>
+                  <tr onClick={() => setTab('cash')}><td>Cash on hand</td><td className="g-pos">{fmt(totalCash)}</td></tr>
+                  <tr onClick={() => setTab('incoming')}><td>Incoming (AR)</td><td className="g-pos">+{fmt(totalIncoming)}</td></tr>
+                  <tr onClick={() => setTab('owed')}><td>Owed now</td><td className="g-neg">−{fmt(totalOwed)}</td></tr>
+                  <tr onClick={() => setTab('zero')}><td>0% card balances</td><td className="g-neg">−{fmt(totalZero)}</td></tr>
+                  <tr onClick={() => setTab('china')}><td>China order remaining</td><td className="g-neg">−{fmt(chinaRemaining)}</td></tr>
+                  <tr onClick={() => setTab('debts')}><td>Big debts</td><td className="g-neg">−{fmt(totalDebts)}</td></tr>
+                  <tr onClick={() => setTab('monthly')}><td>Fixed monthly burn</td><td className="g-mid">{fmt(totalMonthly)}/mo</td></tr>
+                  <tr onClick={() => setTab('payroll')}><td>Payroll (all jobs + standard)</td><td className="g-mid">{fmt(standardTotal + allJobsTotal)}</td></tr>
+                  <tr className="g-total"><td>True net</td><td className={trueNet >= 0 ? 'g-pos' : 'g-neg'}>{fmt(trueNet)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            {(data.history || []).length > 0 && (
+              <div className="quick-summary">
+                <h3>Recent activity</h3>
+                {(data.history || []).slice(0, 8).map(h => (
+                  <p key={h.id} className="history-line">
+                    <span className={h.kind === 'collected' ? 'g-pos' : 'g-neg'}>{h.kind === 'collected' ? '+' : '−'}{fmt(h.amount)}</span>
+                    {' '}{h.kind === 'collected' ? 'collected from' : 'paid'} <strong>{h.name}</strong>
+                    <span className="day-offset"> · {new Date(h.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </p>
+                ))}
+              </div>
+            )}
 
             <div className="quick-summary">
               <h3>Where you stand</h3>
@@ -816,6 +927,13 @@ export default function DashboardPage() {
                 <button className="btn-add small" onClick={sheetPull} disabled={sheetBusy}>{sheetBusy ? '…' : '⬇ Pull from Sheet'}</button>
               </div>
               {sheetMsg && <p className="sheet-msg">{sheetMsg}</p>}
+              <div className="sheet-controls backup-row">
+                <button className="btn-add small" onClick={downloadBackup}>⬇ Download backup</button>
+                <label className="btn-add small file-btn">
+                  ⬆ Restore backup
+                  <input type="file" accept=".json" onChange={restoreBackup} hidden />
+                </label>
+              </div>
             </div>
           </div>
         )}
@@ -826,12 +944,10 @@ export default function DashboardPage() {
             <div className="tab-header">
               <h2>Cash on hand</h2>
               <div className="job-header-actions">
-                {TELLER_APP_ID && (
-                  <button className="btn-add small" onClick={connectBank} disabled={bankBusy}>
-                    {bankBusy ? 'Working…' : '🔗 Connect bank'}
-                  </button>
-                )}
-                {(data.tellerEnrollments || []).length > 0 && (
+                <button className="btn-add small" onClick={connectBank} disabled={bankBusy}>
+                  {bankBusy ? 'Working…' : '🔗 Connect bank (Plaid)'}
+                </button>
+                {(data.plaidItems || []).length > 0 && (
                   <button className="btn-add small" onClick={() => refreshBalances()} disabled={bankBusy}>
                     {bankBusy ? 'Refreshing…' : '↻ Refresh balances'}
                   </button>
@@ -840,8 +956,8 @@ export default function DashboardPage() {
               </div>
             </div>
             {bankErr && <p className="auth-error">{bankErr}</p>}
-            {data.tellerLastSync && (
-              <p className="subtitle">Bank balances last synced {new Date(data.tellerLastSync).toLocaleString()} — linked accounts update automatically here and in Owed now</p>
+            {data.bankLastSync && (
+              <p className="subtitle">Bank balances last synced {new Date(data.bankLastSync).toLocaleString()} — linked accounts update automatically here, in Owed now, and Big debts</p>
             )}
             <div className="spreadsheet">
               <table className="data-table">
@@ -875,7 +991,7 @@ export default function DashboardPage() {
             <div className="spreadsheet">
               <table className="data-table">
                 <thead>
-                  <tr><th>Name</th><th className="col-amount">Amount</th><th className="col-date">Statement close</th><th className="col-date">Due date</th><th>Notes</th><th className="col-x"></th></tr>
+                  <tr><th>Name</th><th className="col-amount">Amount</th><th className="col-date">Statement close</th><th className="col-date">Due date</th><th>Notes</th><th className="col-x2"></th></tr>
                 </thead>
                 <tbody>
                   {data.cards.map(c => (
@@ -885,7 +1001,10 @@ export default function DashboardPage() {
                       <td><input type="text" value={c.close || ''} onChange={e => updateList('cards', c.id, 'close', e.target.value)} placeholder="Aug 3" /></td>
                       <td><input type="text" value={c.due || ''} onChange={e => updateList('cards', c.id, 'due', e.target.value)} placeholder="9/3" /></td>
                       <td><input type="text" value={c.notes || ''} onChange={e => updateList('cards', c.id, 'notes', e.target.value)} placeholder="" /></td>
-                      <td><button className="btn-delete" onClick={() => removeFromList('cards', c.id)}>✕</button></td>
+                      <td>
+                        <button className="act-btn" title="Mark paid — subtracts from first cash account" onClick={() => payOwed(c)}>✓</button>
+                        <button className="btn-delete" onClick={() => removeFromList('cards', c.id)}>✕</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -905,24 +1024,34 @@ export default function DashboardPage() {
               <h2>Incoming (AR)</h2>
               <button className="btn-add" onClick={() => addToList('incoming', { name: '', amount: 0, notes: '' })}>+ Add invoice</button>
             </div>
-            <p className="subtitle">Who owes you money — jobs done or in progress</p>
+            <p className="subtitle">Who owes you money. Set an expected date and it shows up as income in your Projection. ✓ = collected (adds to your first cash account).</p>
             <div className="spreadsheet">
               <table className="data-table">
                 <thead>
-                  <tr><th>Client / job</th><th className="col-amount">Amount</th><th>Notes</th><th className="col-x"></th></tr>
+                  <tr><th>Client / job</th><th className="col-amount">Amount</th><th className="col-date">Expected</th><th className="col-amount">Costs</th><th className="col-amount">Margin</th><th>Notes</th><th className="col-x2"></th></tr>
                 </thead>
                 <tbody>
                   {data.incoming.map(i => (
                     <tr key={i.id}>
                       <td><input type="text" value={i.name} onChange={e => updateList('incoming', i.id, 'name', e.target.value)} placeholder="Client" /></td>
                       <td><input type="number" value={i.amount || ''} onChange={e => updateList('incoming', i.id, 'amount', e.target.value, true)} placeholder="0" /></td>
+                      <td><input type="date" value={i.expected || ''} onChange={e => updateList('incoming', i.id, 'expected', e.target.value)} /></td>
+                      <td><input type="number" value={i.cost || ''} onChange={e => updateList('incoming', i.id, 'cost', e.target.value, true)} placeholder="0" /></td>
+                      <td className={(i.amount || 0) - (i.cost || 0) >= 0 ? 'daily' : 'spent'}>{fmt((i.amount || 0) - (i.cost || 0))}</td>
                       <td><input type="text" value={i.notes || ''} onChange={e => updateList('incoming', i.id, 'notes', e.target.value)} placeholder="net 30, week 2..." /></td>
-                      <td><button className="btn-delete" onClick={() => removeFromList('incoming', i.id)}>✕</button></td>
+                      <td>
+                        <button className="act-btn" title="Mark collected — adds to first cash account" onClick={() => collectIncoming(i)}>✓</button>
+                        <button className="btn-delete" onClick={() => removeFromList('incoming', i.id)}>✕</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="table-footer"><strong>Total incoming: {fmt(totalIncoming)}</strong></div>
+              <div className="table-footer">
+                <strong>Total incoming: {fmt(totalIncoming)}</strong>
+                <strong>Total costs: {fmt(data.incoming.reduce((s, i) => s + (i.cost || 0), 0))}</strong>
+                <strong>Total margin: {fmt(data.incoming.reduce((s, i) => s + (i.amount || 0) - (i.cost || 0), 0))}</strong>
+              </div>
             </div>
           </div>
         )}
@@ -1197,6 +1326,36 @@ export default function DashboardPage() {
             </div>
             <p className="subtitle">Planned purchases hit your Projection on their date — mark bought when done</p>
 
+            <div className="quick-summary afford-box">
+              <h3>Can I afford it?</h3>
+              <div className="sheet-controls">
+                <input
+                  type="number"
+                  value={affordAmt}
+                  onChange={e => setAffordAmt(e.target.value)}
+                  placeholder="Type a price… e.g. 45000"
+                />
+              </div>
+              {(parseFloat(affordAmt) || 0) > 0 && (() => {
+                const amt = parseFloat(affordAmt) || 0;
+                const afterCash = totalCash - amt;
+                const afterNet = netNow - amt;
+                const afterRunway = dailyBurn > 0 ? Math.floor(afterNet / dailyBurn) : Infinity;
+                const verdict = afterNet > totalMonthly * 2 ? 'good' : afterNet > 0 ? 'tight' : 'no';
+                return (
+                  <div className="afford-result">
+                    <p>
+                      {verdict === 'good' && <span className="g-pos">✓ You can afford this comfortably.</span>}
+                      {verdict === 'tight' && <span className="g-mid">⚠ Doable, but tight — less than 2 months of buffer left.</span>}
+                      {verdict === 'no' && <span className="g-neg">✕ This puts you underwater after paying what you owe.</span>}
+                    </p>
+                    <p>Cash after: <strong>{fmt(afterCash)}</strong> · Net after owed: <strong>{fmt(afterNet)}</strong> · Runway: <strong>{afterRunway === Infinity ? '∞' : afterRunway} days</strong></p>
+                    <p className="day-offset">If all AR collects first: net would be {fmt(afterNet + totalIncoming)}</p>
+                  </div>
+                );
+              })()}
+            </div>
+
             <div className="projection-info">
               <div className="info-box">
                 <div className="info-label">Planned (upcoming)</div>
@@ -1314,7 +1473,11 @@ export default function DashboardPage() {
                       </td>
                       <td>
                         {row.events.length
-                          ? row.events.map((e, i) => <span key={i} className="event-tag">{e.name} −{fmt(e.amount)}</span>)
+                          ? row.events.map((e, i) => (
+                            <span key={i} className={`event-tag ${e.sign === 1 ? 'income' : ''}`}>
+                              {e.name} {e.sign === 1 ? '+' : '−'}{fmt(e.amount)}
+                            </span>
+                          ))
                           : <span className="event-none">burn only</span>}
                       </td>
                       <td className={row.cash >= 0 ? 'balance' : 'spent'}>{fmt(row.cash)}</td>
@@ -1322,7 +1485,7 @@ export default function DashboardPage() {
                   ))}
                 </tbody>
               </table>
-              <p className="projection-note">Doesn't count incoming AR ({fmt(totalIncoming)}) — collect Royal Oaks and this whole table shifts up.</p>
+              <p className="projection-note">Incoming AR only counts here when it has an expected date set (Incoming tab). AR without a date ({fmt(data.incoming.filter(i => !i.expected).reduce((s, i) => s + (i.amount || 0), 0))}) is upside not shown.</p>
             </div>
           </div>
         )}

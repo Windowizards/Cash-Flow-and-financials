@@ -19,7 +19,7 @@
 var TABS = {
   Cash: ['name', 'balance', 'notes'],
   Owed: ['name', 'amount', 'close', 'due', 'notes'],
-  Incoming: ['name', 'amount', 'notes'],
+  Incoming: ['name', 'amount', 'expected', 'cost', 'notes'],
   Monthly: ['name', 'amount', 'dueDay', 'type'],
   ZeroCards: ['name', 'balance', 'limit', 'promoEnd', 'notes'],
   ChinaOrder: ['name', 'amount', 'paid', 'status', 'notes'],
