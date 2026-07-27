@@ -1064,6 +1064,25 @@
 .upnext-amt {
   font-family: 'Monaco', monospace;
   font-weight: 700;
+  min-width: 90px;
+  text-align: right;
+}
+
+.upnext-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.act-btn.skip {
+  background: rgba(168, 181, 209, 0.12);
+  border-color: rgba(168, 181, 209, 0.3);
+  color: #a8b5d1;
+}
+
+.act-btn.skip:hover {
+  background: rgba(168, 181, 209, 0.22);
+  color: #ffffff;
 }
 
 .history-line {

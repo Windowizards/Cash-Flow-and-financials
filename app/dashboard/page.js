@@ -1488,7 +1488,7 @@ export default function DashboardPage() {
       if (!d) return;
       const dayOffset = Math.round((d - startOfToday) / 86400000);
       if (dayOffset >= 0 && dayOffset <= HORIZON) {
-        events.push({ day: dayOffset, name: `${c.name} due`, amount: c.amount, sign: -1 });
+        events.push({ day: dayOffset, name: `${c.name} due`, amount: c.amount, sign: -1, source: 'card', id: c.id });
       }
     });
     if (cnt('purchases')) (data.personalPurchases || []).forEach(p => {
@@ -1497,7 +1497,7 @@ export default function DashboardPage() {
       if (isNaN(d)) return;
       const dayOffset = Math.round((d - startOfToday) / 86400000);
       if (dayOffset >= 0 && dayOffset <= HORIZON) {
-        events.push({ day: dayOffset, name: `${p.name || 'purchase'}`, amount: p.amount, sign: -1 });
+        events.push({ day: dayOffset, name: `${p.name || 'purchase'}`, amount: p.amount, sign: -1, source: 'purchase', id: p.id });
       }
     });
     if (cnt('incoming')) data.incoming.forEach(i => {
@@ -1506,7 +1506,7 @@ export default function DashboardPage() {
       if (isNaN(d)) return;
       const dayOffset = Math.round((d - startOfToday) / 86400000);
       if (dayOffset >= 0 && dayOffset <= HORIZON) {
-        events.push({ day: dayOffset, name: `${i.name} pays`, amount: i.amount, sign: 1 });
+        events.push({ day: dayOffset, name: `${i.name} pays`, amount: i.amount, sign: 1, source: 'incoming', id: i.id });
       }
     });
     return events;
@@ -1570,17 +1570,50 @@ export default function DashboardPage() {
   // ---------- Urgency: what's coming in the next 30 days ----------
   const nowD = new Date();
   const todayStart = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate());
+  const dismissedMonthly = data.dismissedMonthly || [];
   const upNext = (() => {
     const ev = buildEvents(30, todayStart);
     if (cnt('monthly')) data.monthly.forEach(m => {
-      if (!m.amount || !m.dueDay) return;
+      if (!m.amount || !m.dueDay || dismissedMonthly.includes(m.id)) return;
       let d = new Date(todayStart.getFullYear(), todayStart.getMonth(), m.dueDay);
       if (d < todayStart) d = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, m.dueDay);
       const day = Math.round((d - todayStart) / 86400000);
-      if (day <= 30) ev.push({ day, name: `${m.name || 'bill'} (monthly)`, amount: m.amount, sign: -1 });
+      if (day <= 30) ev.push({ day, name: `${m.name || 'bill'} (monthly)`, amount: m.amount, sign: -1, source: 'monthly', id: m.id });
     });
     return ev.sort((a, b) => a.day - b.day).slice(0, 25);
   })();
+
+  // ---------- Coming Up row actions: mark paid / skip, dispatched by source ----------
+  const markUpcomingPaid = (ev) => {
+    if (ev.source === 'card') {
+      const row = data.cards.find(c => c.id === ev.id);
+      if (row) paidFull('cards', row);
+    } else if (ev.source === 'monthly') {
+      const row = data.monthly.find(m => m.id === ev.id);
+      if (row) paidFull('monthly', row);
+    } else if (ev.source === 'purchase') {
+      const row = (data.personalPurchases || []).find(p => p.id === ev.id);
+      if (row) paidFull('personalPurchases', row);
+    } else if (ev.source === 'incoming') {
+      const row = data.incoming.find(i => i.id === ev.id);
+      if (row) paidFull('incoming', row);
+    }
+  };
+
+  const skipUpcoming = (ev) => {
+    if (ev.source === 'card') {
+      const row = data.cards.find(c => c.id === ev.id);
+      if (row) deferPayment(row);
+    } else if (ev.source === 'monthly') {
+      if (!window.confirm(`Hide "${ev.name}" from Coming Up? It stays on the Monthly tab — click "show dismissed" to bring it back.`)) return;
+      setData(d => ({ ...d, dismissedMonthly: [...(d.dismissedMonthly || []), ev.id] }));
+    } else if (ev.source === 'purchase') {
+      setData(d => ({ ...d, personalPurchases: d.personalPurchases.map(p => p.id === ev.id ? { ...p, status: 'skipped' } : p) }));
+    } else if (ev.source === 'incoming') {
+      if (!window.confirm(`Clear the expected date for "${ev.name.replace(/ pays$/, '')}"? The invoice stays on Incoming, just without a scheduled date.`)) return;
+      setData(d => ({ ...d, incoming: d.incoming.map(i => i.id === ev.id ? { ...i, expected: '' } : i) }));
+    }
+  };
 
   const daysUntilDue = (dueStr) => {
     const d = nextDue(dueStr);
@@ -1791,13 +1824,26 @@ export default function DashboardPage() {
             </div>
 
             <div className="quick-summary">
-              <h3>Coming up — next 30 days</h3>
+              <div className="sub-section-header">
+                <h3 style={{ marginBottom: 0 }}>Coming up — next 30 days</h3>
+                {dismissedMonthly.length > 0 && (
+                  <button className="auth-skip" onClick={() => setData(d => ({ ...d, dismissedMonthly: [] }))}>
+                    {dismissedMonthly.length} dismissed — show them
+                  </button>
+                )}
+              </div>
               {upNext.length === 0 && <p className="history-line">Nothing scheduled in the next 30 days. Add due dates on Owed, expected dates on Incoming, or due days on Monthly to build your timeline.</p>}
               {upNext.map((e, i) => (
                 <div key={i} className="upnext-row">
                   <span className={`upnext-day ${e.day <= 7 && e.sign !== 1 ? 'urgent' : ''}`}>{e.day === 0 ? 'today' : `+${e.day}d`}</span>
                   <span className="upnext-name">{e.name}</span>
                   <span className={`upnext-amt ${e.sign === 1 ? 'g-pos' : 'g-neg'}`}>{e.sign === 1 ? '+' : '−'}{fmt(e.amount)}</span>
+                  {e.source && (
+                    <span className="upnext-actions">
+                      <button className="act-btn" title={e.sign === 1 ? 'Mark received — adds to cash' : 'Mark paid — subtracts from cash'} onClick={() => markUpcomingPaid(e)}>✓</button>
+                      <button className="act-btn skip" title="Skip / dismiss this one" onClick={() => skipUpcoming(e)}>⊘</button>
+                    </span>
+                  )}
                 </div>
               ))}
               {upNext.length > 0 && (
