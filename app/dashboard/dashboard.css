@@ -265,13 +265,19 @@
 .data-table select {
   width: 100%;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(0, 217, 255, 0.15);
+  background: #1a1f3a;
+  border: 1px solid rgba(0, 217, 255, 0.2);
   color: #ffffff;
   font-family: 'Monaco', monospace;
   font-size: 14px;
   border-radius: 6px;
   transition: all 0.2s ease;
+  color-scheme: dark;
+}
+
+.data-table select option {
+  background: #1a1f3a;
+  color: #ffffff;
 }
 
 .data-table input:focus,
@@ -535,8 +541,8 @@
   font-size: 18px;
   font-weight: 700;
   color: #00d9ff;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(0, 217, 255, 0.15);
+  background: #1a1f3a;
+  border: 1px solid rgba(0, 217, 255, 0.2);
   border-radius: 8px;
   padding: 10px 14px;
   min-width: 240px;
@@ -649,13 +655,19 @@
 }
 
 .th-type {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(0, 217, 255, 0.2) !important;
-  color: #a8b5d1 !important;
+  background: #1a1f3a !important;
+  border: 1px solid rgba(0, 217, 255, 0.25) !important;
+  color: #d6dfef !important;
   font-size: 10px !important;
   padding: 2px 2px !important;
   border-radius: 4px;
   cursor: pointer;
+  color-scheme: dark;
+}
+
+.th-type option {
+  background: #1a1f3a;
+  color: #ffffff;
 }
 
 .th-del {
@@ -726,14 +738,92 @@
   flex-wrap: wrap;
 }
 
-.qb-period {
-  background: rgba(255, 255, 255, 0.03);
-  color: #ffffff;
+.count-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #a8b5d1;
+  cursor: pointer;
+  padding: 8px 12px;
   border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 8px;
+  background: #1a1f3a;
+  white-space: nowrap;
+}
+
+.count-toggle input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #06ffa5;
+}
+
+.act-btn.partial {
+  background: rgba(255, 190, 11, 0.15);
+  border-color: rgba(255, 190, 11, 0.3);
+  color: #ffbe0b;
+}
+
+.act-btn.partial:hover {
+  background: rgba(255, 190, 11, 0.28);
+  box-shadow: 0 4px 12px rgba(255, 190, 11, 0.2);
+}
+
+.act-btn.zero {
+  background: rgba(131, 56, 236, 0.15);
+  border-color: rgba(131, 56, 236, 0.35);
+  color: #b183f5;
+  font-size: 11px;
+}
+
+.act-btn.zero:hover {
+  background: rgba(131, 56, 236, 0.28);
+  box-shadow: 0 4px 12px rgba(131, 56, 236, 0.2);
+}
+
+.link-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link-cell select {
+  max-width: 160px;
+}
+
+.link-jump {
+  background: rgba(0, 217, 255, 0.12);
+  border: 1px solid rgba(0, 217, 255, 0.3);
+  color: #00d9ff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.link-jump:hover {
+  background: rgba(0, 217, 255, 0.25);
+}
+
+.qb-period {
+  background: #1a1f3a;
+  color: #ffffff;
+  border: 1px solid rgba(0, 217, 255, 0.25);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 13px;
   cursor: pointer;
+  color-scheme: dark;
+}
+
+.qb-period option {
+  background: #1a1f3a;
+  color: #ffffff;
 }
 
 .qb-report {
@@ -886,8 +976,8 @@
   padding: 8px 18px;
   border-radius: 20px;
   border: 1px solid rgba(0, 217, 255, 0.2);
-  background: rgba(255, 255, 255, 0.03);
-  color: #a8b5d1;
+  background: #1a1f3a;
+  color: #d6dfef;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -947,8 +1037,8 @@
 .sheet-controls input {
   flex: 1;
   min-width: 260px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: #1a1f3a;
+  border: 1px solid rgba(0, 217, 255, 0.25);
   border-radius: 8px;
   padding: 10px 14px;
   color: #ffffff;
@@ -1017,8 +1107,8 @@
 }
 
 .auth-form input {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: #1a1f3a;
+  border: 1px solid rgba(0, 217, 255, 0.25);
   border-radius: 8px;
   padding: 12px 16px;
   color: #ffffff;
@@ -1101,8 +1191,8 @@
 }
 
 .pw-form input {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(0, 217, 255, 0.2);
+  background: #1a1f3a;
+  border: 1px solid rgba(0, 217, 255, 0.25);
   border-radius: 8px;
   padding: 8px 10px;
   color: #ffffff;

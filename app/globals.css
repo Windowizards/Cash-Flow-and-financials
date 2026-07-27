@@ -5,6 +5,7 @@
 }
 
 :root {
+  color-scheme: dark;
   --primary: #00d9ff;
   --primary-dark: #0099cc;
   --secondary: #ff006e;
@@ -123,7 +124,7 @@ button.secondary:hover {
 }
 
 input, textarea, select {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--dark-surface-2);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -131,7 +132,15 @@ input, textarea, select {
   font-family: 'Monaco', 'Courier New', monospace;
   font-size: 14px;
   transition: all 0.2s ease;
-  backdrop-filter: blur(10px);
+}
+
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background: var(--dark-surface-2);
+  color: var(--text-primary);
 }
 
 input::placeholder, textarea::placeholder, select::placeholder {
@@ -140,7 +149,7 @@ input::placeholder, textarea::placeholder, select::placeholder {
 
 input:focus, textarea:focus, select:focus {
   outline: none;
-  background: rgba(0, 217, 255, 0.05);
+  background: var(--dark-surface-3);
   border-color: var(--primary);
   box-shadow: 0 0 20px rgba(0, 217, 255, 0.2);
 }
@@ -178,14 +187,14 @@ input[type="checkbox"] {
 }
 
 .status-select {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--dark-surface-2);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 13px;
   cursor: pointer;
-  backdrop-filter: blur(10px);
+  color-scheme: dark;
 }
 
 .card {

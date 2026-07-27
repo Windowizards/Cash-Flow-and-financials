@@ -97,6 +97,7 @@ const SEED = {
   ],
   chinaOrder: [],
   personalPurchases: [],
+  goals: [],
   customTabs: [],
   history: [],
   plaidItems: [],
@@ -148,6 +149,7 @@ const DEFAULT_SCHEMAS = {
     { key: 'name', label: 'Account', type: 'text', core: true },
     { key: 'balance', label: 'Balance', type: 'number', core: true },
     { key: 'kind', label: 'Kind', type: 'select', options: ['bank', 'credit card'] },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   cards: [
@@ -155,6 +157,7 @@ const DEFAULT_SCHEMAS = {
     { key: 'amount', label: 'Amount', type: 'number', core: true },
     { key: 'close', label: 'Statement close', type: 'text' },
     { key: 'due', label: 'Due date', type: 'text', core: true },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   incoming: [
@@ -162,19 +165,21 @@ const DEFAULT_SCHEMAS = {
     { key: 'amount', label: 'Amount', type: 'number', core: true },
     { key: 'expected', label: 'Expected', type: 'date', core: true },
     { key: 'cost', label: 'Costs', type: 'number', core: true },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   monthly: [
     { key: 'name', label: 'Expense', type: 'text', core: true },
     { key: 'amount', label: 'Monthly', type: 'number', core: true },
     { key: 'dueDay', label: 'Due day', type: 'number', core: true },
-    { key: 'type', label: 'Type', type: 'select', options: ['business', 'personal'], core: true },
+    { key: 'type', label: 'Tag', type: 'select', options: ['business', 'personal'], core: true },
   ],
   zeroCards: [
     { key: 'name', label: 'Card', type: 'text', core: true },
     { key: 'balance', label: 'Balance', type: 'number', core: true },
     { key: 'limit', label: 'Limit', type: 'number', core: true },
     { key: 'promoEnd', label: 'Promo ends', type: 'text' },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   chinaOrder: [
@@ -182,6 +187,7 @@ const DEFAULT_SCHEMAS = {
     { key: 'amount', label: 'Total cost', type: 'number', core: true },
     { key: 'paid', label: 'Paid so far', type: 'number', core: true },
     { key: 'status', label: 'Status', type: 'select', options: ['quoted', 'ordered', 'production', 'shipped', 'customs', 'received'], core: true },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   personalPurchases: [
@@ -189,24 +195,47 @@ const DEFAULT_SCHEMAS = {
     { key: 'amount', label: 'Amount', type: 'number', core: true },
     { key: 'date', label: 'Date', type: 'date', core: true },
     { key: 'status', label: 'Status', type: 'select', options: ['planned', 'bought', 'skipped'], core: true },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['personal', 'business'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   debts: [
     { key: 'name', label: 'Debt', type: 'text', core: true },
     { key: 'amount', label: 'Balance', type: 'number', core: true },
     { key: 'limit', label: 'Limit', type: 'number', core: true },
+    { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
+    { key: 'link', label: 'Link', type: 'link' },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  goals: [
+    { key: 'name', label: 'Goal', type: 'text', core: true },
+    { key: 'target', label: 'Target', type: 'number', core: true },
+    { key: 'saved', label: 'Saved so far', type: 'number', core: true },
+    { key: 'date', label: 'Target date', type: 'date' },
+    { key: 'link', label: 'Link', type: 'link' },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
 };
+
+// Every list tab gets a Link column so rows can point at rows anywhere else in the app
+['accounts', 'cards', 'incoming', 'monthly', 'zeroCards', 'chinaOrder', 'personalPurchases'].forEach(k => {
+  const cols = DEFAULT_SCHEMAS[k];
+  if (!cols.some(c => c.key === 'link')) {
+    const notesIdx = cols.findIndex(c => c.key === 'notes');
+    const linkCol = { key: 'link', label: 'Link', type: 'link' };
+    if (notesIdx >= 0) cols.splice(notesIdx, 0, linkCol);
+    else cols.push(linkCol);
+  }
+});
 
 const CUSTOM_TAB_COLUMNS = [
   { key: 'name', label: 'Name', type: 'text' },
   { key: 'amount', label: 'Amount', type: 'number' },
   { key: 'date', label: 'Date', type: 'text' },
+  { key: 'link', label: 'Link', type: 'link' },
   { key: 'notes', label: 'Notes', type: 'text' },
 ];
 
-function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDelRow, onSchemaChange, footerExtras = [] }) {
+function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDelRow, onSchemaChange, footerExtras = [], linkTargets = [], onJump }) {
   const addColumn = () => onSchemaChange([...columns, { key: 'c_' + Date.now(), label: 'New column', type: 'text' }]);
   const renameColumn = (key, label) => onSchemaChange(columns.map(c => c.key === key ? { ...c, label } : c));
   const retypeColumn = (key, type) => onSchemaChange(columns.map(c => c.key === key ? { ...c, type } : c));
@@ -246,7 +275,17 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
               <tr key={row.id}>
                 {columns.map(col => (
                   <td key={col.key}>
-                    {col.type === 'select' ? (
+                    {col.type === 'link' ? (
+                      <div className="link-cell">
+                        <select value={row[col.key] || ''} onChange={e => onCell(row.id, col.key, e.target.value, false)}>
+                          <option value="">—</option>
+                          {linkTargets.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                        {row[col.key] && onJump && (
+                          <button className="link-jump" title="Go to linked item" onClick={() => onJump(row[col.key])}>→</button>
+                        )}
+                      </div>
+                    ) : col.type === 'select' ? (
                       <select value={row[col.key] || (col.options && col.options[0]) || ''} onChange={e => onCell(row.id, col.key, e.target.value, false)}>
                         {(col.options || []).map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
@@ -325,6 +364,20 @@ export default function DashboardPage() {
       setQbMsg('QuickBooks connected ✓ — pick a period and load your reports');
     }
   }, [loaded, qbStaged]);
+
+  // One-time: convert a custom "savings buckets" tab into Goals
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      const sb = (d.customTabs || []).find(t => /saving|bucket/i.test(t.name || ''));
+      if (!sb || (d.goals || []).length) return d;
+      return {
+        ...d,
+        goals: (sb.rows || []).map(r => ({ id: r.id, name: r.name, target: r.amount || 0, saved: 0, date: '', notes: r.notes || '' })),
+        customTabs: (d.customTabs || []).filter(t => t.id !== sb.id),
+      };
+    });
+  }, [loaded]);
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetMsg, setSheetMsg] = useState('');
 
@@ -460,7 +513,8 @@ export default function DashboardPage() {
     const fresh = [];
     list.forEach(t => {
       if (ignored.includes(t.id)) return;
-      const pool = t.type === 'credit' ? data.cards : t.type === 'loan' ? data.debts : data.accounts;
+      const pool = t.type === 'credit' ? [...data.cards, ...(data.zeroCards || [])]
+        : t.type === 'loan' ? data.debts : data.accounts;
       if (!pool.some(r => matchBankRow(r, t))) fresh.push({ ...t, institution });
     });
     if (fresh.length) {
@@ -477,11 +531,15 @@ export default function DashboardPage() {
         const t = list.find(x => x.type === 'credit' && matchBankRow(r, x));
         return t ? { ...r, amount: Math.abs(t.current != null ? t.current : (t.available || 0)) } : r;
       });
+      const zeroCards = (d.zeroCards || []).map(r => {
+        const t = list.find(x => x.type === 'credit' && matchBankRow(r, x));
+        return t ? { ...r, balance: Math.abs(t.current != null ? t.current : (t.available || 0)), limit: t.limit != null ? t.limit : r.limit } : r;
+      });
       const debts = d.debts.map(r => {
         const t = list.find(x => x.type === 'loan' && matchBankRow(r, x));
         return t ? { ...r, amount: Math.abs(t.current || 0) } : r;
       });
-      return { ...d, accounts, cards, debts, bankLastSync: new Date().toISOString() };
+      return { ...d, accounts, cards, zeroCards, debts, bankLastSync: new Date().toISOString() };
     });
   };
 
@@ -489,10 +547,14 @@ export default function DashboardPage() {
     if (bucket === 'skip') {
       setData(d => ({ ...d, bankIgnored: [...(d.bankIgnored || []), acct.id] }));
     } else {
-      const tag = bucket === 'business' ? 'Window Wizards' : 'personal';
+      const tag = bucket === 'business' ? 'Window Wizards' : bucket === 'zero' ? '0% card' : 'personal';
       setData(d => {
         const label = `${acct.institution || 'Bank'} ${acct.name}${acct.mask ? ' ··' + acct.mask : ''}`;
         const base = { id: Date.now() + Math.floor(Math.random() * 1000), plaidId: acct.id, bucket, notes: 'live · ' + tag };
+        if (bucket === 'zero') {
+          const bal = Math.abs(acct.current != null ? acct.current : (acct.available || 0));
+          return { ...d, zeroCards: [...(d.zeroCards || []), { ...base, bucket: 'business', name: label, balance: bal, limit: acct.limit || 0, promoEnd: '' }] };
+        }
         if (acct.type === 'credit') {
           const bal = Math.abs(acct.current != null ? acct.current : (acct.available || 0));
           return { ...d, cards: [...d.cards, { ...base, name: label, amount: bal, close: '', due: '' }] };
@@ -573,31 +635,154 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
 
-  // ---------- Quick actions: collect AR / pay bill ----------
-  const collectIncoming = (row) => {
+  // ---------- Quick actions: full / partial pay + receive ----------
+  const moveCash = (accounts, delta) => {
+    const a = [...accounts];
+    if (a.length) a[0] = { ...a[0], balance: (a[0].balance || 0) + delta };
+    return a;
+  };
+
+  const logHistory = (d, kind, name, amount) =>
+    [{ id: Date.now(), date: new Date().toISOString(), kind, name, amount }, ...(d.history || [])].slice(0, 50);
+
+  const promptAmt = (label) => {
+    const v = parseFloat(window.prompt(label, ''));
+    return isNaN(v) || v <= 0 ? null : v;
+  };
+
+  const paidFull = (listKey, row) => {
     setData(d => {
-      const accounts = [...d.accounts];
-      if (accounts.length) accounts[0] = { ...accounts[0], balance: (accounts[0].balance || 0) + (row.amount || 0) };
-      return {
-        ...d,
-        accounts,
-        incoming: d.incoming.filter(x => x.id !== row.id),
-        history: [{ id: Date.now(), date: new Date().toISOString(), kind: 'collected', name: row.name, amount: row.amount || 0 }, ...(d.history || [])].slice(0, 50),
-      };
+      const name = row.name || 'item';
+      if (listKey === 'incoming') {
+        const amt = row.amount || 0;
+        return { ...d, accounts: moveCash(d.accounts, amt), incoming: d.incoming.filter(x => x.id !== row.id), history: logHistory(d, 'collected', name, amt) };
+      }
+      if (listKey === 'cards') {
+        const amt = row.amount || 0;
+        return { ...d, accounts: moveCash(d.accounts, -amt), cards: d.cards.filter(x => x.id !== row.id), history: logHistory(d, 'paid', name, amt) };
+      }
+      if (listKey === 'chinaOrder') {
+        const remaining = Math.max(0, (row.amount || 0) - (row.paid || 0));
+        return { ...d, accounts: moveCash(d.accounts, -remaining), chinaOrder: d.chinaOrder.map(x => x.id === row.id ? { ...x, paid: x.amount || 0 } : x), history: logHistory(d, 'paid', name, remaining) };
+      }
+      if (listKey === 'debts' || listKey === 'zeroCards') {
+        const field = listKey === 'debts' ? 'amount' : 'balance';
+        const owed = row[field] || 0;
+        return { ...d, accounts: moveCash(d.accounts, -owed), [listKey]: d[listKey].map(x => x.id === row.id ? { ...x, [field]: 0 } : x), history: logHistory(d, 'paid', name, owed) };
+      }
+      if (listKey === 'monthly') {
+        const amt = row.amount || 0;
+        return { ...d, accounts: moveCash(d.accounts, -amt), history: logHistory(d, 'paid', name, amt) };
+      }
+      if (listKey === 'personalPurchases') {
+        const amt = row.amount || 0;
+        return { ...d, accounts: moveCash(d.accounts, -amt), personalPurchases: d.personalPurchases.map(x => x.id === row.id ? { ...x, status: 'bought' } : x), history: logHistory(d, 'paid', name, amt) };
+      }
+      return d;
     });
   };
 
-  const payOwed = (row) => {
+  const paidPartial = (listKey, row) => {
+    const isIncoming = listKey === 'incoming';
+    const amt = promptAmt(isIncoming
+      ? `How much did ${row.name || 'they'} pay you?`
+      : `How much did you pay toward ${row.name || 'this'}?`);
+    if (!amt) return;
     setData(d => {
-      const accounts = [...d.accounts];
-      if (accounts.length) accounts[0] = { ...accounts[0], balance: (accounts[0].balance || 0) - (row.amount || 0) };
-      return {
-        ...d,
-        accounts,
-        cards: d.cards.filter(x => x.id !== row.id),
-        history: [{ id: Date.now(), date: new Date().toISOString(), kind: 'paid', name: row.name, amount: row.amount || 0 }, ...(d.history || [])].slice(0, 50),
-      };
+      const name = (row.name || 'item') + ' (partial)';
+      if (isIncoming) {
+        return { ...d, accounts: moveCash(d.accounts, amt), incoming: d.incoming.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'collected', name, amt) };
+      }
+      if (listKey === 'cards') {
+        return { ...d, accounts: moveCash(d.accounts, -amt), cards: d.cards.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
+      }
+      if (listKey === 'chinaOrder') {
+        return { ...d, accounts: moveCash(d.accounts, -amt), chinaOrder: d.chinaOrder.map(x => x.id === row.id ? { ...x, paid: (x.paid || 0) + amt } : x), history: logHistory(d, 'paid', name, amt) };
+      }
+      if (listKey === 'debts' || listKey === 'zeroCards') {
+        const field = listKey === 'debts' ? 'amount' : 'balance';
+        return { ...d, accounts: moveCash(d.accounts, -amt), [listKey]: d[listKey].map(x => x.id === row.id ? { ...x, [field]: Math.max(0, (x[field] || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
+      }
+      if (listKey === 'monthly') {
+        return { ...d, accounts: moveCash(d.accounts, -amt), history: logHistory(d, 'paid', name, amt) };
+      }
+      if (listKey === 'personalPurchases') {
+        return { ...d, accounts: moveCash(d.accounts, -amt), personalPurchases: d.personalPurchases.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
+      }
+      return d;
     });
+  };
+
+  const payButtons = (listKey, row, fullTitle, partialTitle) => (
+    <>
+      <button className="act-btn" title={fullTitle} onClick={() => paidFull(listKey, row)}>✓</button>
+      <button className="act-btn partial" title={partialTitle} onClick={() => paidPartial(listKey, row)}>½</button>
+    </>
+  );
+
+  const countToggle = (key) => (
+    <label className="count-toggle" title="On = this tab counts in overview totals and projection. Off = tracked here only.">
+      <input type="checkbox" checked={cnt(key)} onChange={e => setCounted(key, e.target.checked)} />
+      counted
+    </label>
+  );
+
+  // ---------- Move cards between Owed and 0% tabs ----------
+  const moveToZero = (row) => {
+    setData(d => ({
+      ...d,
+      cards: d.cards.filter(x => x.id !== row.id),
+      zeroCards: [...(d.zeroCards || []), {
+        id: Date.now(), plaidId: row.plaidId, name: row.name, balance: row.amount || 0,
+        limit: row.limit || 0, promoEnd: '', bucket: row.bucket, link: row.link, notes: row.notes || '',
+      }],
+    }));
+  };
+
+  const moveToOwed = (row) => {
+    setData(d => ({
+      ...d,
+      zeroCards: (d.zeroCards || []).filter(x => x.id !== row.id),
+      cards: [...d.cards, {
+        id: Date.now(), plaidId: row.plaidId, name: row.name, amount: row.balance || 0,
+        close: '', due: '', bucket: row.bucket, link: row.link, notes: row.notes || '',
+      }],
+    }));
+  };
+
+  // ---------- Tag paths: link any row to any other row ----------
+  const LINK_SOURCES = [
+    ['incoming', 'Incoming'], ['cards', 'Owed'], ['accounts', 'Cash'], ['monthly', 'Monthly'],
+    ['zeroCards', '0% card'], ['chinaOrder', 'China'], ['personalPurchases', 'Purchase'],
+    ['debts', 'Debt'], ['goals', 'Goal'],
+  ];
+  const linkTargets = [
+    ...LINK_SOURCES.flatMap(([k, label]) =>
+      (data[k] || []).filter(r => r.name).map(r => ({ value: `${k}:${r.id}`, label: `${label}: ${r.name}` }))
+    ),
+    ...data.jobs.map(j => ({ value: `jobs:${j.id}`, label: `Job: ${j.name || 'Job'}` })),
+    ...(data.customTabs || []).flatMap(t =>
+      (t.rows || []).filter(r => r.name).map(r => ({ value: `custom-${t.id}:${r.id}`, label: `${t.name || 'Tab'}: ${r.name}` }))
+    ),
+  ];
+
+  const jumpTo = (path) => {
+    const [k, id] = String(path).split(':');
+    const map = {
+      accounts: 'cash', cards: 'owed', incoming: 'incoming', monthly: 'monthly',
+      zeroCards: 'zero', chinaOrder: 'china', personalPurchases: 'purchases',
+      debts: 'debts', goals: 'goals',
+    };
+    if (k === 'jobs') {
+      setTab('payroll');
+      setPayrollView(parseFloat(id));
+      return;
+    }
+    if (k.startsWith('custom-')) {
+      setTab(k);
+      return;
+    }
+    if (map[k]) setTab(map[k]);
   };
 
   // ---------- Backup / restore ----------
@@ -637,12 +822,27 @@ export default function DashboardPage() {
   const chinaPaid = (data.chinaOrder || []).reduce((s, c) => s + (c.paid || 0), 0);
   const purchasesPlanned = (data.personalPurchases || []).filter(p => p.status === 'planned').reduce((s, p) => s + (p.amount || 0), 0);
   const purchasesBought = (data.personalPurchases || []).filter(p => p.status === 'bought').reduce((s, p) => s + (p.amount || 0), 0);
-  const dailyBurn = totalMonthly / 30;
-  const netNow = totalCash - totalOwed;
-  const projected = netNow + totalIncoming;
-  const runwayDays = dailyBurn > 0 ? Math.floor(netNow / dailyBurn) : Infinity;
+  // "counted" toggles — tabs switched off are excluded from every aggregate
+  const cnt = (key) => ((data.tabSettings || {})[key] || {}).counted !== false;
+  const setCounted = (key, v) => setData(d => ({
+    ...d,
+    tabSettings: { ...(d.tabSettings || {}), [key]: { ...((d.tabSettings || {})[key] || {}), counted: v } },
+  }));
+
   const chinaRemaining = chinaTotal - chinaPaid;
-  const trueNet = totalCash + totalIncoming - totalOwed - totalZero - totalDebts - chinaRemaining;
+  const aggCash = cnt('cash') ? totalCash : 0;
+  const aggOwed = cnt('owed') ? totalOwed : 0;
+  const aggIncoming = cnt('incoming') ? totalIncoming : 0;
+  const aggMonthly = cnt('monthly') ? totalMonthly : 0;
+  const aggZero = cnt('zero') ? totalZero : 0;
+  const aggDebts = cnt('debts') ? totalDebts : 0;
+  const aggChina = cnt('china') ? chinaRemaining : 0;
+
+  const dailyBurn = aggMonthly / 30;
+  const netNow = aggCash - aggOwed;
+  const projected = netNow + aggIncoming;
+  const runwayDays = dailyBurn > 0 ? Math.floor(netNow / dailyBurn) : Infinity;
+  const trueNet = aggCash + aggIncoming - aggOwed - aggZero - aggDebts - aggChina;
 
   const bizMonthly = data.monthly.filter(e => e.type === 'business');
   const persMonthly = data.monthly.filter(e => e.type === 'personal');
@@ -912,7 +1112,7 @@ export default function DashboardPage() {
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     const events = [];
-    data.cards.forEach(c => {
+    if (cnt('owed')) data.cards.forEach(c => {
       if (!c.amount) return;
       const d = nextDue(c.due);
       if (!d) return;
@@ -921,7 +1121,7 @@ export default function DashboardPage() {
         events.push({ day: dayOffset, name: `${c.name} due`, amount: c.amount, sign: -1 });
       }
     });
-    (data.personalPurchases || []).forEach(p => {
+    if (cnt('purchases')) (data.personalPurchases || []).forEach(p => {
       if (p.status !== 'planned' || !p.amount || !p.date) return;
       const d = new Date(p.date + 'T00:00:00');
       if (isNaN(d)) return;
@@ -930,7 +1130,7 @@ export default function DashboardPage() {
         events.push({ day: dayOffset, name: `${p.name || 'purchase'}`, amount: p.amount, sign: -1 });
       }
     });
-    data.incoming.forEach(i => {
+    if (cnt('incoming')) data.incoming.forEach(i => {
       if (!i.amount || !i.expected) return;
       const d = new Date(i.expected + 'T00:00:00');
       if (isNaN(d)) return;
@@ -948,7 +1148,7 @@ export default function DashboardPage() {
       const date = new Date(startOfToday);
       date.setDate(date.getDate() + day);
       const flowSoFar = events.filter(e => e.day <= day).reduce((s, e) => s + e.amount * (e.sign || -1), 0);
-      const cash = totalCash - dailyBurn * day + flowSoFar;
+      const cash = aggCash - dailyBurn * day + flowSoFar;
       const todaysEvents = events.filter(e => e.day === day);
       return { day, date, cash, events: todaysEvents };
     });
@@ -1051,6 +1251,7 @@ export default function DashboardPage() {
           <button className={`nav-btn ${tab === 'zero' ? 'active' : ''}`} onClick={() => setTab('zero')}>{tabName('zero', '0% cards')}</button>
           <button className={`nav-btn ${tab === 'china' ? 'active' : ''}`} onClick={() => setTab('china')}>{tabName('china', 'China order')}</button>
           <button className={`nav-btn ${tab === 'purchases' ? 'active' : ''}`} onClick={() => setTab('purchases')}>{tabName('purchases', 'Purchases')}</button>
+          <button className={`nav-btn ${tab === 'goals' ? 'active' : ''}`} onClick={() => setTab('goals')}>{tabName('goals', 'Goals')}</button>
           <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>{tabName('debts', 'Big debts')}</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
           <button className={`nav-btn ${tab === 'quickbooks' ? 'active' : ''}`} onClick={() => setTab('quickbooks')}>QuickBooks</button>
@@ -1206,6 +1407,7 @@ export default function DashboardPage() {
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('cash', 'Cash')} onChange={e => setTabName('cash', e.target.value)} />
               <div className="job-header-actions">
+                {countToggle('cash')}
                 <button className="btn-add small" onClick={connectBank} disabled={bankBusy}>
                   {bankBusy ? 'Working…' : '🔗 Connect bank (Plaid)'}
                 </button>
@@ -1227,6 +1429,8 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('accounts', id, key, v, num)}
               onDelRow={(id) => removeFromList('accounts', id)}
               onSchemaChange={(cols) => setSchema('accounts', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
               footerExtras={[`Total I have: ${fmt(totalCash)}`]}
             />
           </div>
@@ -1237,7 +1441,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('owed', 'Owed now')} onChange={e => setTabName('owed', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('cards', { name: '', amount: 0, close: '', due: '', notes: '' })}>+ Add row</button>
+              <div className="job-header-actions">
+                {countToggle('owed')}
+                <button className="btn-add" onClick={() => addToList('cards', { name: '', amount: 0, close: '', due: '', notes: '' })}>+ Add row</button>
+              </div>
             </div>
             <p className="subtitle">Credit cards, crew payments, bills — everything currently due</p>
             <EditableTable
@@ -1246,7 +1453,14 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('cards', id, key, v, num)}
               onDelRow={(id) => removeFromList('cards', id)}
               onSchemaChange={(cols) => setSchema('cards', cols)}
-              rowActions={(row) => <button className="act-btn" title="Mark paid — subtracts from first cash account" onClick={() => payOwed(row)}>✓</button>}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+              rowActions={(row) => (
+                <>
+                  {payButtons('cards', row, 'Fully paid — subtracts from cash', 'Partial payment — enter how much you paid')}
+                  <button className="act-btn zero" title="Move to 0% cards tab" onClick={() => moveToZero(row)}>0%</button>
+                </>
+              )}
               footerExtras={[`Cash − owed: ${fmt(netNow)}`]}
             />
           </div>
@@ -1257,7 +1471,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('incoming', 'Incoming')} onChange={e => setTabName('incoming', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('incoming', { name: '', amount: 0, notes: '' })}>+ Add invoice</button>
+              <div className="job-header-actions">
+                {countToggle('incoming')}
+                <button className="btn-add" onClick={() => addToList('incoming', { name: '', amount: 0, notes: '' })}>+ Add invoice</button>
+              </div>
             </div>
             <p className="subtitle">Who owes you money. Set an expected date and it shows up as income in your Projection. ✓ = collected (adds to your first cash account).</p>
             <EditableTable
@@ -1271,7 +1488,9 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('incoming', id, key, v, num)}
               onDelRow={(id) => removeFromList('incoming', id)}
               onSchemaChange={(cols) => setSchema('incoming', cols)}
-              rowActions={(row) => <button className="act-btn" title="Mark collected — adds to first cash account" onClick={() => collectIncoming(row)}>✓</button>}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+              rowActions={(row) => payButtons('incoming', row, 'Fully received — adds to cash', 'Partial payment received — enter how much')}
               footerExtras={[`Total margin: ${fmt(data.incoming.reduce((s, i) => s + (i.amount || 0) - (i.cost || 0), 0))}`]}
             />
           </div>
@@ -1282,7 +1501,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('monthly', 'Monthly')} onChange={e => setTabName('monthly', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('monthly', { name: '', amount: 0, dueDay: 1, type: 'business' })}>+ Add expense</button>
+              <div className="job-header-actions">
+                {countToggle('monthly')}
+                <button className="btn-add" onClick={() => addToList('monthly', { name: '', amount: 0, dueDay: 1, type: 'business' })}>+ Add expense</button>
+              </div>
             </div>
 
             <div className="projection-info">
@@ -1310,6 +1532,9 @@ export default function DashboardPage() {
                   onCell={(id, key, v, num) => updateList('monthly', id, key, v, num)}
                   onDelRow={(id) => removeFromList('monthly', id)}
                   onSchemaChange={(cols) => setSchema('monthly', cols)}
+                  linkTargets={linkTargets}
+                  onJump={jumpTo}
+                  rowActions={(row) => payButtons('monthly', row, 'Paid this month — subtracts from cash, bill stays for next month', 'Partial payment — enter how much')}
                 />
               </div>
             ))}
@@ -1444,7 +1669,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('zero', '0% cards')} onChange={e => setTabName('zero', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('zeroCards', { name: '', balance: 0, limit: 0, promoEnd: '', notes: '' })}>+ Add card</button>
+              <div className="job-header-actions">
+                {countToggle('zero')}
+                <button className="btn-add" onClick={() => addToList('zeroCards', { name: '', balance: 0, limit: 0, promoEnd: '', notes: '' })}>+ Add card</button>
+              </div>
             </div>
             <p className="subtitle">No interest for now — watch the promo end dates</p>
             <EditableTable
@@ -1458,6 +1686,14 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('zeroCards', id, key, v, num)}
               onDelRow={(id) => removeFromList('zeroCards', id)}
               onSchemaChange={(cols) => setSchema('zeroCards', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+              rowActions={(row) => (
+                <>
+                  {payButtons('zeroCards', row, 'Pay off fully — subtracts from cash', 'Pay down — enter amount')}
+                  <button className="act-btn zero" title="Move to Owed now tab" onClick={() => moveToOwed(row)}>→O</button>
+                </>
+              )}
             />
           </div>
         )}
@@ -1467,7 +1703,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('china', 'China order')} onChange={e => setTabName('china', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
+              <div className="job-header-actions">
+                {countToggle('china')}
+                <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
+              </div>
             </div>
             <p className="subtitle">Track the order line by line — cost, deposits paid, what's left</p>
             <EditableTable
@@ -1481,6 +1720,9 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('chinaOrder', id, key, v, num)}
               onDelRow={(id) => removeFromList('chinaOrder', id)}
               onSchemaChange={(cols) => setSchema('chinaOrder', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+              rowActions={(row) => payButtons('chinaOrder', row, 'Pay remaining — subtracts from cash', 'Deposit / partial payment — enter amount')}
               footerExtras={[`Still owed: ${fmt(chinaTotal - chinaPaid)}`]}
             />
           </div>
@@ -1491,7 +1733,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('purchases', 'Purchases')} onChange={e => setTabName('purchases', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('personalPurchases', { name: '', amount: 0, date: '', status: 'planned', notes: '' })}>+ Add purchase</button>
+              <div className="job-header-actions">
+                {countToggle('purchases')}
+                <button className="btn-add" onClick={() => addToList('personalPurchases', { name: '', amount: 0, date: '', status: 'planned', notes: '' })}>+ Add purchase</button>
+              </div>
             </div>
             <p className="subtitle">Planned purchases hit your Projection on their date — mark bought when done</p>
 
@@ -1546,7 +1791,35 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('personalPurchases', id, key, v, num)}
               onDelRow={(id) => removeFromList('personalPurchases', id)}
               onSchemaChange={(cols) => setSchema('personalPurchases', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+              rowActions={(row) => payButtons('personalPurchases', row, 'Bought it — subtracts from cash, marks bought', 'Deposit / partial — enter amount')}
               footerExtras={[`Planned: ${fmt(purchasesPlanned)}`, `Bought: ${fmt(purchasesBought)}`]}
+            />
+          </div>
+        )}
+
+        {/* ============ GOALS ============ */}
+        {tab === 'goals' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <input className="job-name title-input" value={tabName('goals', 'Goals')} onChange={e => setTabName('goals', e.target.value)} />
+              <button className="btn-add" onClick={() => addToList('goals', { name: '', target: 0, saved: 0, date: '', notes: '' })}>+ Add goal</button>
+            </div>
+            <p className="subtitle">Just goals — nothing here counts toward your totals or projection, ever</p>
+            <EditableTable
+              columns={getSchema('goals')}
+              rows={data.goals || []}
+              computed={[{
+                label: 'Progress',
+                fn: (row) => row.target > 0 ? Math.min(100, Math.round(((row.saved || 0) / row.target) * 100)) + '%' : '—',
+                className: (row) => row.target > 0 && (row.saved || 0) >= row.target ? 'daily' : 'utilization',
+              }]}
+              onCell={(id, key, v, num) => updateList('goals', id, key, v, num)}
+              onDelRow={(id) => removeFromList('goals', id)}
+              onSchemaChange={(cols) => setSchema('goals', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
             />
           </div>
         )}
@@ -1556,7 +1829,10 @@ export default function DashboardPage() {
           <div className="tab-content">
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('debts', 'Big debts')} onChange={e => setTabName('debts', e.target.value)} />
-              <button className="btn-add" onClick={() => addToList('debts', { name: '', amount: 0, limit: 0, notes: '' })}>+ Add debt</button>
+              <div className="job-header-actions">
+                {countToggle('debts')}
+                <button className="btn-add" onClick={() => addToList('debts', { name: '', amount: 0, limit: 0, notes: '' })}>+ Add debt</button>
+              </div>
             </div>
             <p className="subtitle">Long-term: family, travel, mortgage — 0% cards have their own tab now</p>
             <EditableTable
@@ -1570,6 +1846,9 @@ export default function DashboardPage() {
               onCell={(id, key, v, num) => updateList('debts', id, key, v, num)}
               onDelRow={(id) => removeFromList('debts', id)}
               onSchemaChange={(cols) => setSchema('debts', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
+              rowActions={(row) => payButtons('debts', row, 'Pay off fully — subtracts from cash', 'Pay down — enter amount')}
             />
           </div>
         )}
@@ -1703,6 +1982,8 @@ export default function DashboardPage() {
                 ...d,
                 customTabs: (d.customTabs || []).map(t => t.id === activeCustom.id ? { ...t, columns: cols } : t),
               }))}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
             />
           </div>
         )}
@@ -1724,6 +2005,9 @@ export default function DashboardPage() {
                 <div className="classify-btns">
                   <button className="btn-add small" onClick={() => classifyBank(a, 'business')}>🪟 Window Wizards</button>
                   <button className="btn-add small" onClick={() => classifyBank(a, 'personal')}>👤 Personal</button>
+                  {a.type === 'credit' && (
+                    <button className="btn-add small" onClick={() => classifyBank(a, 'zero')}>0️⃣ 0% card</button>
+                  )}
                   <button className="auth-skip" onClick={() => classifyBank(a, 'skip')}>Unrelated — skip</button>
                 </div>
               </div>
