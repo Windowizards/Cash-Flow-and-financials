@@ -420,34 +420,36 @@ export default function DashboardPage() {
     document.head.appendChild(s);
   });
 
+  // Match a table row to a Plaid account by stored id, or by the ··mask in the
+  // label — this collapses duplicate bank connections onto the same row.
+  const matchBankRow = (row, t) => row.plaidId === t.id || (t.mask && row.name && String(row.name).includes('··' + t.mask));
+
   const applyBankAccounts = (list, institution) => {
+    const ignored = data.bankIgnored || [];
+    const fresh = [];
+    list.forEach(t => {
+      if (ignored.includes(t.id)) return;
+      const pool = t.type === 'credit' ? data.cards : t.type === 'loan' ? data.debts : data.accounts;
+      if (!pool.some(r => matchBankRow(r, t))) fresh.push({ ...t, institution });
+    });
+    if (fresh.length) {
+      setPendingBank(p => [...p, ...fresh.filter(f =>
+        !p.some(x => x.id === f.id || (f.mask && x.mask === f.mask && x.institution === f.institution && x.type === f.type))
+      )]);
+    }
     setData(d => {
-      const accounts = [...d.accounts];
-      const cards = [...d.cards];
-      const debts = [...d.debts];
-      const fresh = [];
-      list.forEach(t => {
-        if ((d.bankIgnored || []).includes(t.id)) return;
-        if (t.type === 'credit') {
-          const bal = Math.abs(t.current != null ? t.current : (t.available || 0));
-          const i = cards.findIndex(c => c.plaidId === t.id);
-          if (i >= 0) cards[i] = { ...cards[i], amount: bal };
-          else fresh.push({ ...t, institution });
-        } else if (t.type === 'loan') {
-          const bal = Math.abs(t.current || 0);
-          const i = debts.findIndex(x => x.plaidId === t.id);
-          if (i >= 0) debts[i] = { ...debts[i], amount: bal };
-          else fresh.push({ ...t, institution });
-        } else {
-          const bal = t.available != null ? t.available : (t.current || 0);
-          const i = accounts.findIndex(a => a.plaidId === t.id);
-          if (i >= 0) accounts[i] = { ...accounts[i], balance: bal };
-          else fresh.push({ ...t, institution });
-        }
+      const accounts = d.accounts.map(r => {
+        const t = list.find(x => x.type !== 'credit' && x.type !== 'loan' && matchBankRow(r, x));
+        return t ? { ...r, balance: t.available != null ? t.available : (t.current || 0) } : r;
       });
-      if (fresh.length) {
-        setPendingBank(p => [...p, ...fresh.filter(f => !p.some(x => x.id === f.id))]);
-      }
+      const cards = d.cards.map(r => {
+        const t = list.find(x => x.type === 'credit' && matchBankRow(r, x));
+        return t ? { ...r, amount: Math.abs(t.current != null ? t.current : (t.available || 0)) } : r;
+      });
+      const debts = d.debts.map(r => {
+        const t = list.find(x => x.type === 'loan' && matchBankRow(r, x));
+        return t ? { ...r, amount: Math.abs(t.current || 0) } : r;
+      });
       return { ...d, accounts, cards, debts, bankLastSync: new Date().toISOString() };
     });
   };
