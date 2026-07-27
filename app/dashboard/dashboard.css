@@ -609,10 +609,45 @@
 
 .payroll-scroll {
   overflow-x: auto;
+  scrollbar-width: auto;
+  padding-bottom: 4px;
+}
+
+.payroll-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+
+.payroll-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 217, 255, 0.06);
+  border-radius: 6px;
+}
+
+.payroll-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #00d9ff 0%, #8338ec 100%);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .payroll-table {
   min-width: 900px;
+}
+
+/* Worker + Rate stay pinned while you scroll through the day columns —
+   otherwise Rate scrolls off-screen and is easy to lose track of. */
+.payroll-table .pin-1,
+.payroll-table .pin-2 {
+  position: sticky;
+  background: #171b32;
+  z-index: 2;
+}
+
+.payroll-table .pin-1 { left: 0; width: 140px; min-width: 140px; }
+.payroll-table .pin-2 { left: 140px; }
+
+.payroll-table th.pin-1,
+.payroll-table th.pin-2 {
+  z-index: 3;
 }
 
 .hr-input {

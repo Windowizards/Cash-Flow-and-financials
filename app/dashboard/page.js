@@ -109,6 +109,8 @@ const SEED = {
   personalPurchases: [],
   goals: [],
   savingsBuckets: [],
+  refiProceeds: 0,
+  refiAllocations: [],
   customTabs: [],
   history: [],
   plaidItems: [],
@@ -221,6 +223,7 @@ const DEFAULT_SCHEMAS = {
     { key: 'name', label: 'Debt', type: 'text', core: true },
     { key: 'amount', label: 'Balance', type: 'number', core: true },
     { key: 'limit', label: 'Limit', type: 'number', core: true },
+    { key: 'due', label: 'Next payment', type: 'text' },
     { key: 'bucket', label: 'Tag', type: 'select', options: ['business', 'personal'] },
     { key: 'link', label: 'Link', type: 'link' },
     { key: 'notes', label: 'Notes', type: 'text' },
@@ -238,6 +241,12 @@ const DEFAULT_SCHEMAS = {
     { key: 'amount', label: 'Set aside', type: 'number', core: true, pctOf: 'target' },
     { key: 'target', label: 'Target', type: 'number', core: true },
     { key: 'date', label: 'By when', type: 'date' },
+    { key: 'link', label: 'Link', type: 'link' },
+    { key: 'notes', label: 'Notes', type: 'text' },
+  ],
+  refiAllocations: [
+    { key: 'name', label: 'Covers', type: 'text', core: true },
+    { key: 'amount', label: 'Amount', type: 'number', core: true },
     { key: 'link', label: 'Link', type: 'link' },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
@@ -624,6 +633,18 @@ export default function DashboardPage() {
           ...fromZero.map(r => ({ id: r.id, name: r.name, amount: r.balance || 0, target: 0, date: '', link: r.link, notes: r.notes || '' })),
         ],
       };
+    });
+  }, [loaded]);
+
+  // One-time: mortgage refi — first payment on the new loan is Oct 1
+  useEffect(() => {
+    if (!loaded) return;
+    setData(d => {
+      if (d.mortgageRefiDateSet) return d;
+      const debts = d.debts.map(row =>
+        /mortgage/i.test(row.name || '') && !row.due ? { ...row, due: '10/1' } : row
+      );
+      return { ...d, mortgageRefiDateSet: true, debts };
     });
   }, [loaded]);
 
@@ -1057,7 +1078,7 @@ export default function DashboardPage() {
   const LINK_SOURCES = [
     ['incoming', 'Incoming'], ['cards', 'Owed'], ['accounts', 'Cash'], ['monthly', 'Monthly'],
     ['zeroCards', '0% card'], ['chinaOrder', 'China'], ['personalPurchases', 'Purchase'],
-    ['debts', 'Debt'], ['goals', 'Goal'], ['savingsBuckets', 'Bucket'],
+    ['debts', 'Debt'], ['goals', 'Goal'], ['savingsBuckets', 'Bucket'], ['refiAllocations', 'Refi'],
   ];
   const linkTargets = [
     ...LINK_SOURCES.flatMap(([k, label]) =>
@@ -1074,7 +1095,7 @@ export default function DashboardPage() {
     const map = {
       accounts: 'cash', cards: 'owed', incoming: 'incoming', monthly: 'monthly',
       zeroCards: 'zero', chinaOrder: 'china', personalPurchases: 'purchases',
-      debts: 'debts', goals: 'goals', savingsBuckets: 'savings',
+      debts: 'debts', goals: 'goals', savingsBuckets: 'savings', refiAllocations: 'refi',
     };
     if (k === 'jobs') {
       setTab('payroll');
@@ -1227,10 +1248,36 @@ export default function DashboardPage() {
     }));
   };
   const addWorker = (target) => {
-    setWorkers(target, ws => [...ws, { id: Date.now(), name: '', rate: 0, hours: Array(NUM_DAYS).fill(0) }]);
+    setWorkers(target, ws => [...ws, { id: Date.now(), name: '', rate: 0, hours: Array(NUM_DAYS).fill(0), extra: {} }]);
   };
   const removeWorker = (target, workerId) => {
     setWorkers(target, ws => ws.filter(w => w.id !== workerId));
+  };
+
+  // ---------- Payroll grid: user-added columns (per standard crew / per job) ----------
+  const getExtraCols = (target) => target === 'standard'
+    ? ((data.standardPayroll || {}).extraCols || [])
+    : ((data.jobs.find(j => j.id === target) || {}).extraCols || []);
+
+  const setExtraCols = (target, cols) => {
+    setData(d => {
+      if (target === 'standard') {
+        const sp = d.standardPayroll || { workers: [] };
+        return { ...d, standardPayroll: { ...sp, extraCols: cols } };
+      }
+      return { ...d, jobs: d.jobs.map(j => j.id === target ? { ...j, extraCols: cols } : j) };
+    });
+  };
+
+  const addExtraCol = (target) => setExtraCols(target, [...getExtraCols(target), { key: 'x_' + Date.now(), label: 'New column', type: 'text' }]);
+  const renameExtraCol = (target, key, label) => setExtraCols(target, getExtraCols(target).map(c => c.key === key ? { ...c, label } : c));
+  const retypeExtraCol = (target, key, type) => setExtraCols(target, getExtraCols(target).map(c => c.key === key ? { ...c, type } : c));
+  const removeExtraCol = (target, key) => setExtraCols(target, getExtraCols(target).filter(c => c.key !== key));
+
+  const updateWorkerExtraCell = (target, workerId, colKey, value, numeric) => {
+    setWorkers(target, ws => ws.map(w => w.id === workerId
+      ? { ...w, extra: { ...(w.extra || {}), [colKey]: numeric ? (parseFloat(value) || 0) : value } }
+      : w));
   };
 
   const updateExtra = (jobId, extraId, field, value) => {
@@ -1571,25 +1618,51 @@ export default function DashboardPage() {
   const renderWorkerGrid = (target, workers) => {
     const dayHourTotals = Array(NUM_DAYS).fill(0);
     workers.forEach(w => w.hours.forEach((h, i) => { dayHourTotals[i] += (h || 0); }));
+    const extraCols = getExtraCols(target);
     return (
       <div className="spreadsheet payroll-scroll">
         <table className="data-table payroll-table">
           <thead>
             <tr>
-              <th>Worker</th>
-              <th className="col-rate">Rate</th>
+              <th className="pin-1">Worker</th>
+              <th className="col-rate pin-2">Rate</th>
               {Array.from({ length: NUM_DAYS }, (_, i) => <th key={i} className="col-hr">D{i + 1}</th>)}
+              {extraCols.map(col => (
+                <th key={col.key}>
+                  <div className="th-edit">
+                    <input className="th-input" value={col.label} onChange={e => renameExtraCol(target, col.key, e.target.value)} title="Click to rename column" />
+                    <span className="th-tools">
+                      <select className="th-type" value={col.type} onChange={e => retypeExtraCol(target, col.key, e.target.value)} title="Column type">
+                        <option value="text">abc</option>
+                        <option value="number">123</option>
+                      </select>
+                      <button className="th-del" title="Remove column" onClick={() => removeExtraCol(target, col.key)}>✕</button>
+                    </span>
+                  </div>
+                </th>
+              ))}
               <th className="col-amount">Total</th>
-              <th className="col-x"></th>
+              <th className="col-x">
+                <button className="th-add" title="Add a column" onClick={() => addExtraCol(target)}>＋ col</button>
+              </th>
             </tr>
           </thead>
           <tbody>
             {workers.map(w => (
               <tr key={w.id}>
-                <td><input type="text" value={w.name} onChange={e => updateWorker(target, w.id, 'name', e.target.value)} placeholder="Name" /></td>
-                <td><input type="number" value={w.rate || ''} onChange={e => updateWorker(target, w.id, 'rate', e.target.value)} placeholder="0" /></td>
+                <td className="pin-1"><input type="text" value={w.name} onChange={e => updateWorker(target, w.id, 'name', e.target.value)} placeholder="Name" /></td>
+                <td className="pin-2"><input type="number" value={w.rate || ''} onChange={e => updateWorker(target, w.id, 'rate', e.target.value)} placeholder="0" /></td>
                 {w.hours.map((h, idx) => (
                   <td key={idx}><input className="hr-input" type="number" value={h || ''} onChange={e => updateHours(target, w.id, idx, e.target.value)} placeholder="·" /></td>
+                ))}
+                {extraCols.map(col => (
+                  <td key={col.key}>
+                    <input
+                      type={col.type === 'number' ? 'number' : 'text'}
+                      value={(w.extra || {})[col.key] == null ? '' : (w.extra || {})[col.key]}
+                      onChange={e => updateWorkerExtraCell(target, w.id, col.key, e.target.value, col.type === 'number')}
+                    />
+                  </td>
                 ))}
                 <td className="balance">{fmt(workerTotal(w))}</td>
                 <td><button className="btn-delete" onClick={() => removeWorker(target, w.id)}>✕</button></td>
@@ -1597,9 +1670,10 @@ export default function DashboardPage() {
             ))}
             {workers.length > 0 && (
               <tr className="totals-row">
-                <td>Day totals (hrs)</td>
-                <td></td>
+                <td className="pin-1">Day totals (hrs)</td>
+                <td className="pin-2"></td>
                 {dayHourTotals.map((t, i) => <td key={i} className="daily">{t || ''}</td>)}
+                {extraCols.map(col => <td key={col.key}></td>)}
                 <td className="balance">{fmt(gridTotal(workers))}</td>
                 <td></td>
               </tr>
@@ -1629,6 +1703,7 @@ export default function DashboardPage() {
           <button className={`nav-btn ${tab === 'purchases' ? 'active' : ''}`} onClick={() => setTab('purchases')}>{tabName('purchases', 'Purchases')}</button>
           <button className={`nav-btn ${tab === 'goals' ? 'active' : ''}`} onClick={() => setTab('goals')}>{tabName('goals', 'Goals')}</button>
           <button className={`nav-btn ${tab === 'debts' ? 'active' : ''}`} onClick={() => setTab('debts')}>{tabName('debts', 'Big debts')}</button>
+          <button className={`nav-btn ${tab === 'refi' ? 'active' : ''}`} onClick={() => setTab('refi')}>{tabName('refi', 'Refi allocation')}</button>
           <button className={`nav-btn ${tab === 'projection' ? 'active' : ''}`} onClick={() => setTab('projection')}>Projection</button>
           <button className={`nav-btn ${tab === 'savings' ? 'active' : ''}`} onClick={() => setTab('savings')}>{tabName('savings', 'Savings buckets')}</button>
           <button className={`nav-btn ${tab === 'quickbooks' ? 'active' : ''}`} onClick={() => setTab('quickbooks')}>QuickBooks</button>
@@ -1775,7 +1850,8 @@ export default function DashboardPage() {
               <h3>Where you stand</h3>
               <p>You have <strong>{fmt(totalCash)}</strong> and owe <strong>{fmt(totalOwed)}</strong> right now, leaving <strong>{fmt(netNow)}</strong> net. With <strong>{fmt(totalIncoming)}</strong> incoming, your projected position is <strong>{fmt(projected)}</strong>.</p>
               <p>Fixed expenses run <strong>{fmt(totalMonthly)}/month</strong> ({fmt2(dailyBurn)}/day). 0% cards carry <strong>{fmt(totalZero)}</strong>. Long-term debt sits at <strong>{fmt(totalDebts)}</strong>.</p>
-              {chinaTotal > 0 && <p>China order: <strong>{fmt(chinaTotal)}</strong> total, <strong>{fmt(chinaTotal - chinaPaid)}</strong> still to pay.</p>}
+              {chinaTotal > 0 && cnt('china') && <p>China order: <strong>{fmt(chinaTotal)}</strong> total, <strong>{fmt(chinaTotal - chinaPaid)}</strong> still to pay.</p>}
+              {chinaTotal > 0 && !cnt('china') && <p className="day-offset">China order sits in its own tab, kept out of this page on purpose — see China order.</p>}
               {purchasesPlanned > 0 && <p>Planned personal purchases: <strong>{fmt(purchasesPlanned)}</strong> — already factored into your projection dates.</p>}
             </div>
 
@@ -2335,21 +2411,88 @@ export default function DashboardPage() {
                 <button className="btn-add" onClick={() => addToList('debts', { name: '', amount: 0, limit: 0, notes: '' })}>+ Add debt</button>
               </div>
             </div>
-            <p className="subtitle">Long-term: family, travel, mortgage — 0% cards have their own tab now</p>
+            <p className="subtitle">Long-term: family, travel, mortgage — 0% cards have their own tab now. "Next payment" is informational only — the full balance never counts as due on that date.</p>
             <EditableTable
               columns={getSchema('debts')}
               rows={data.debts}
-              computed={[{
-                label: 'Used',
-                fn: (row) => row.limit > 0 ? Math.round((row.amount / row.limit) * 100) + '%' : '—',
-                className: (row) => row.limit > 0 && (row.amount / row.limit) > 0.9 ? 'spent' : 'utilization',
-              }]}
+              computed={[
+                {
+                  label: 'Used',
+                  fn: (row) => row.limit > 0 ? Math.round((row.amount / row.limit) * 100) + '%' : '—',
+                  className: (row) => row.limit > 0 && (row.amount / row.limit) > 0.9 ? 'spent' : 'utilization',
+                },
+                {
+                  label: 'Due in',
+                  fn: (row) => {
+                    const days = daysUntilDue(row.due);
+                    return days == null ? '—' : (days <= 0 ? 'TODAY' : days + 'd');
+                  },
+                  className: (row) => {
+                    const days = daysUntilDue(row.due);
+                    return days == null ? 'utilization' : days <= 14 ? 'g-neg' : days <= 45 ? 'spent' : 'daily';
+                  },
+                },
+              ]}
               onCell={(id, key, v, num) => updateList('debts', id, key, v, num)}
               onDelRow={(id) => removeFromList('debts', id)}
               onSchemaChange={(cols) => setSchema('debts', cols)}
               linkTargets={linkTargets}
               onJump={jumpTo}
               rowActions={(row) => payButtons('debts', row, 'Pay off fully — subtracts from cash', 'Pay down — enter amount')}
+            />
+          </div>
+        )}
+
+        {/* ============ REFI ALLOCATION ============ */}
+        {tab === 'refi' && (
+          <div className="tab-content">
+            <div className="tab-header">
+              <input className="job-name title-input" value={tabName('refi', 'Refi allocation')} onChange={e => setTabName('refi', e.target.value)} />
+              <button className="btn-add" onClick={() => addToList('refiAllocations', { name: '', amount: 0, notes: '' })}>+ Add allocation</button>
+            </div>
+            <p className="subtitle">Planning tool for the mortgage refinance — its own environment, never counted in your totals or projection until money actually lands.</p>
+
+            <div className="quick-summary">
+              <h3>Expected proceeds</h3>
+              <div className="sheet-controls">
+                <input
+                  type="number"
+                  value={data.refiProceeds || ''}
+                  onChange={e => setData(d => ({ ...d, refiProceeds: parseFloat(e.target.value) || 0 }))}
+                  placeholder="How much are you getting?"
+                />
+              </div>
+            </div>
+
+            {(() => {
+              const allocated = (data.refiAllocations || []).reduce((s, r) => s + (r.amount || 0), 0);
+              const left = (data.refiProceeds || 0) - allocated;
+              return (
+                <div className="projection-info">
+                  <div className="info-box">
+                    <div className="info-label">Refi proceeds</div>
+                    <div className="info-value">{fmt(data.refiProceeds || 0)}</div>
+                  </div>
+                  <div className="info-box">
+                    <div className="info-label">Allocated</div>
+                    <div className="info-value">{fmt(allocated)}</div>
+                  </div>
+                  <div className={`info-box ${left < 0 ? 'warning' : ''}`}>
+                    <div className="info-label">{left < 0 ? 'Over-allocated by' : 'Unallocated'}</div>
+                    <div className="info-value">{fmt(Math.abs(left))}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <EditableTable
+              columns={getSchema('refiAllocations')}
+              rows={data.refiAllocations || []}
+              onCell={(id, key, v, num) => updateList('refiAllocations', id, key, v, num)}
+              onDelRow={(id) => removeFromList('refiAllocations', id)}
+              onSchemaChange={(cols) => setSchema('refiAllocations', cols)}
+              linkTargets={linkTargets}
+              onJump={jumpTo}
             />
           </div>
         )}
