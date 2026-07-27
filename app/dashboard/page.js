@@ -147,6 +147,7 @@ const DEFAULT_SCHEMAS = {
   accounts: [
     { key: 'name', label: 'Account', type: 'text', core: true },
     { key: 'balance', label: 'Balance', type: 'number', core: true },
+    { key: 'kind', label: 'Kind', type: 'select', options: ['bank', 'credit card'] },
     { key: 'notes', label: 'Notes', type: 'text' },
   ],
   cards: [
@@ -420,9 +421,11 @@ export default function DashboardPage() {
     document.head.appendChild(s);
   });
 
-  // Match a table row to a Plaid account by stored id, or by the ··mask in the
-  // label — this collapses duplicate bank connections onto the same row.
-  const matchBankRow = (row, t) => row.plaidId === t.id || (t.mask && row.name && String(row.name).includes('··' + t.mask));
+  // Match a table row to a Plaid account by stored id, or by name + ··mask in the
+  // label — collapses duplicate bank connections without confusing two cards
+  // that share the same last-4 (e.g. two Amex cards both ··1006).
+  const matchBankRow = (row, t) => row.plaidId === t.id
+    || (t.mask && row.name && String(row.name).includes('··' + t.mask) && (!t.name || String(row.name).includes(t.name)));
 
   const applyBankAccounts = (list, institution) => {
     const ignored = data.bankIgnored || [];
@@ -434,7 +437,7 @@ export default function DashboardPage() {
     });
     if (fresh.length) {
       setPendingBank(p => [...p, ...fresh.filter(f =>
-        !p.some(x => x.id === f.id || (f.mask && x.mask === f.mask && x.institution === f.institution && x.type === f.type))
+        !p.some(x => x.id === f.id || (f.mask && x.mask === f.mask && x.name === f.name && x.institution === f.institution))
       )]);
     }
     setData(d => {
@@ -470,7 +473,7 @@ export default function DashboardPage() {
           return { ...d, debts: [...d.debts, { ...base, name: label, amount: Math.abs(acct.current || 0), limit: acct.limit || 0 }] };
         }
         const bal = acct.available != null ? acct.available : (acct.current || 0);
-        return { ...d, accounts: [...d.accounts, { ...base, name: label, balance: bal }] };
+        return { ...d, accounts: [...d.accounts, { ...base, name: label, balance: bal, kind: 'bank' }] };
       });
     }
     setPendingBank(p => p.filter(x => x.id !== acct.id));
@@ -481,8 +484,9 @@ export default function DashboardPage() {
     if (!list.length) return;
     setBankBusy(true);
     setBankErr('');
-    try {
-      for (const item of list) {
+    const errors = [];
+    for (const item of list) {
+      try {
         const res = await fetch('/api/plaid/balances', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -491,10 +495,11 @@ export default function DashboardPage() {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'refresh failed');
         applyBankAccounts(json, item.institution);
+      } catch (e) {
+        errors.push(`${item.institution || 'bank'}: ${String(e.message || e)}`);
       }
-    } catch (e) {
-      setBankErr(String(e.message || e));
     }
+    if (errors.length) setBankErr(errors.join(' · '));
     setBankBusy(false);
   };
 
@@ -629,7 +634,13 @@ export default function DashboardPage() {
   };
 
   // ---------- Editable schemas + tab names ----------
-  const getSchema = (key) => ((data.schemas || {})[key]) || DEFAULT_SCHEMAS[key];
+  const getSchema = (key) => {
+    const saved = (data.schemas || {})[key];
+    const def = DEFAULT_SCHEMAS[key];
+    if (!saved) return def;
+    const missing = def.filter(c => !saved.some(s => s.key === c.key));
+    return missing.length ? [...saved, ...missing] : saved;
+  };
   const setSchema = (key, cols) => setData(d => ({ ...d, schemas: { ...(d.schemas || {}), [key]: cols } }));
   const tabName = (key, def) => ((data.tabNames || {})[key]) || def;
   const setTabName = (key, v) => setData(d => ({ ...d, tabNames: { ...(d.tabNames || {}), [key]: v } }));
