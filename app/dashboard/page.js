@@ -1743,7 +1743,7 @@ export default function DashboardPage() {
               <th className="col-rate pin-3" title="Multiplied by number of days with any hours logged">Day rate</th>
               {Array.from({ length: NUM_DAYS }, (_, i) => <th key={i} className="col-hr">D{i + 1}</th>)}
               {extraCols.map(col => (
-                <th key={col.key}>
+                <th key={col.key} style={{ width: 100, minWidth: 100 }}>
                   <div className="th-edit">
                     <input className="th-input" value={col.label} onChange={e => renameExtraCol(target, col.key, e.target.value)} title="Click to rename column" />
                     <span className="th-tools">

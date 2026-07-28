@@ -572,7 +572,7 @@
 .col-date { width: 130px; }
 .col-x { width: 52px; }
 .col-rate { width: 110px; min-width: 110px; }
-.col-hr { width: 56px; }
+.col-hr { width: 56px; min-width: 56px; max-width: 56px; }
 
 .job-block {
   margin-bottom: 40px;
@@ -631,7 +631,8 @@
 }
 
 .payroll-table {
-  min-width: 900px;
+  min-width: 1050px;
+  table-layout: fixed;
 }
 
 /* Worker + both rate columns stay pinned while you scroll through the day
@@ -656,7 +657,9 @@
 
 .hr-input {
   text-align: center;
-  padding: 6px 4px !important;
+  padding: 6px 2px !important;
+  min-width: 48px;
+  font-size: 12px !important;
 }
 
 .extras-table {
