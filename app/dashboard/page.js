@@ -937,12 +937,11 @@ export default function DashboardPage() {
   // "Connect bank" or "Refresh balances", never automatically on open.
 
   // ---------- Quick actions: full / partial pay + receive ----------
-  const moveCash = (accounts, delta) => {
-    const a = [...accounts];
-    if (a.length) a[0] = { ...a[0], balance: (a[0].balance || 0) + delta };
-    return a;
-  };
-
+  // These never touch account balances directly — your Cash accounts are the
+  // source of truth (live via Plaid, or edited by hand) and get refreshed on
+  // their own. Marking something paid/collected just updates that row and
+  // logs it to history; the owed/incoming totals drop automatically because
+  // the row itself is gone or reduced.
   const logHistory = (d, kind, name, amount) =>
     [{ id: Date.now(), date: new Date().toISOString(), kind, name, amount }, ...(d.history || [])].slice(0, 50);
 
@@ -957,35 +956,35 @@ export default function DashboardPage() {
       ? Math.max(0, (row.amount || 0) - (row.paid || 0))
       : listKey === 'zeroCards' ? (row.balance || 0) : (row.amount || 0);
     const msg = listKey === 'incoming'
-      ? `Collect ${fmt(moving)} from ${label}? Adds to your first cash account.`
-      : `Mark ${label} paid? Subtracts ${fmt(moving)} from your first cash account.`;
+      ? `Mark ${fmt(moving)} collected from ${label}?`
+      : `Mark ${label} paid (${fmt(moving)})?`;
     if (!window.confirm(msg)) return;
     setData(d => {
       const name = row.name || 'item';
       if (listKey === 'incoming') {
         const amt = row.amount || 0;
-        return { ...d, accounts: moveCash(d.accounts, amt), incoming: d.incoming.filter(x => x.id !== row.id), history: logHistory(d, 'collected', name, amt) };
+        return { ...d, incoming: d.incoming.filter(x => x.id !== row.id), history: logHistory(d, 'collected', name, amt) };
       }
       if (listKey === 'cards') {
         const amt = row.amount || 0;
-        return { ...d, accounts: moveCash(d.accounts, -amt), cards: d.cards.filter(x => x.id !== row.id), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, cards: d.cards.filter(x => x.id !== row.id), history: logHistory(d, 'paid', name, amt) };
       }
       if (listKey === 'chinaOrder') {
         const remaining = Math.max(0, (row.amount || 0) - (row.paid || 0));
-        return { ...d, accounts: moveCash(d.accounts, -remaining), chinaOrder: d.chinaOrder.map(x => x.id === row.id ? { ...x, paid: x.amount || 0 } : x), history: logHistory(d, 'paid', name, remaining) };
+        return { ...d, chinaOrder: d.chinaOrder.map(x => x.id === row.id ? { ...x, paid: x.amount || 0 } : x), history: logHistory(d, 'paid', name, remaining) };
       }
       if (listKey === 'debts' || listKey === 'zeroCards') {
         const field = listKey === 'debts' ? 'amount' : 'balance';
         const owed = row[field] || 0;
-        return { ...d, accounts: moveCash(d.accounts, -owed), [listKey]: d[listKey].map(x => x.id === row.id ? { ...x, [field]: 0 } : x), history: logHistory(d, 'paid', name, owed) };
+        return { ...d, [listKey]: d[listKey].map(x => x.id === row.id ? { ...x, [field]: 0 } : x), history: logHistory(d, 'paid', name, owed) };
       }
       if (listKey === 'monthly') {
         const amt = row.amount || 0;
-        return { ...d, accounts: moveCash(d.accounts, -amt), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, history: logHistory(d, 'paid', name, amt) };
       }
       if (listKey === 'personalPurchases') {
         const amt = row.amount || 0;
-        return { ...d, accounts: moveCash(d.accounts, -amt), personalPurchases: d.personalPurchases.map(x => x.id === row.id ? { ...x, status: 'bought' } : x), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, personalPurchases: d.personalPurchases.map(x => x.id === row.id ? { ...x, status: 'bought' } : x), history: logHistory(d, 'paid', name, amt) };
       }
       return d;
     });
@@ -1000,23 +999,23 @@ export default function DashboardPage() {
     setData(d => {
       const name = (row.name || 'item') + ' (partial)';
       if (isIncoming) {
-        return { ...d, accounts: moveCash(d.accounts, amt), incoming: d.incoming.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'collected', name, amt) };
+        return { ...d, incoming: d.incoming.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'collected', name, amt) };
       }
       if (listKey === 'cards') {
-        return { ...d, accounts: moveCash(d.accounts, -amt), cards: d.cards.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, cards: d.cards.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
       }
       if (listKey === 'chinaOrder') {
-        return { ...d, accounts: moveCash(d.accounts, -amt), chinaOrder: d.chinaOrder.map(x => x.id === row.id ? { ...x, paid: (x.paid || 0) + amt } : x), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, chinaOrder: d.chinaOrder.map(x => x.id === row.id ? { ...x, paid: (x.paid || 0) + amt } : x), history: logHistory(d, 'paid', name, amt) };
       }
       if (listKey === 'debts' || listKey === 'zeroCards') {
         const field = listKey === 'debts' ? 'amount' : 'balance';
-        return { ...d, accounts: moveCash(d.accounts, -amt), [listKey]: d[listKey].map(x => x.id === row.id ? { ...x, [field]: Math.max(0, (x[field] || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, [listKey]: d[listKey].map(x => x.id === row.id ? { ...x, [field]: Math.max(0, (x[field] || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
       }
       if (listKey === 'monthly') {
-        return { ...d, accounts: moveCash(d.accounts, -amt), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, history: logHistory(d, 'paid', name, amt) };
       }
       if (listKey === 'personalPurchases') {
-        return { ...d, accounts: moveCash(d.accounts, -amt), personalPurchases: d.personalPurchases.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
+        return { ...d, personalPurchases: d.personalPurchases.map(x => x.id === row.id ? { ...x, amount: Math.max(0, (x.amount || 0) - amt) } : x), history: logHistory(d, 'paid', name, amt) };
       }
       return d;
     });
@@ -1959,18 +1958,27 @@ export default function DashboardPage() {
                 <button className="btn-add small" onClick={connectBank} disabled={bankBusy}>
                   {bankBusy ? 'Working…' : '🔗 Connect bank (Plaid)'}
                 </button>
-                {(data.plaidItems || []).length > 0 && (
-                  <button className="btn-add small" onClick={() => refreshBalances()} disabled={bankBusy}>
-                    {bankBusy ? 'Refreshing…' : '↻ Refresh balances'}
-                  </button>
-                )}
+                <button
+                  className="btn-add small"
+                  onClick={() => {
+                    if (!(data.plaidItems || []).length) { setBankErr('No bank connected yet — click "Connect bank" first.'); return; }
+                    setBankErr('');
+                    refreshBalances();
+                  }}
+                  disabled={bankBusy}
+                  title="Pull the latest balance from every connected bank, whenever you want — nothing here updates on its own"
+                >
+                  {bankBusy ? 'Refreshing…' : '↻ Refresh balances'}
+                </button>
                 <button className="btn-add" onClick={() => addToList('accounts', { name: '', balance: 0, notes: '' })}>+ Add account</button>
               </div>
             </div>
             {bankErr && <p className="auth-error">{bankErr}</p>}
-            {data.bankLastSync && (
-              <p className="subtitle">Bank balances last synced {new Date(data.bankLastSync).toLocaleString()} — linked accounts update automatically here, in Owed now, and Big debts</p>
-            )}
+            <p className="subtitle">
+              Marking things paid/collected on Owed or Incoming never touches these balances — {data.bankLastSync
+                ? <>they update only when you hit <strong>Refresh balances</strong> (last synced {new Date(data.bankLastSync).toLocaleString()}), or when you edit a balance below by hand.</>
+                : <>edit a balance below by hand, or connect a bank and hit <strong>Refresh balances</strong> to pull it in automatically.</>}
+            </p>
             <EditableTable
               columns={getSchema('accounts')}
               rows={data.accounts}
