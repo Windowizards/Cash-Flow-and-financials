@@ -1121,6 +1121,28 @@ export default function DashboardPage() {
     }));
   };
 
+  const changeMonthlyDate = (row) => {
+    const current = row.dueDay || 1;
+    const input = window.prompt(
+      `Change the due day for "${row.name || 'this bill'}" — currently the ${current}${current === 1 ? 'st' : current === 2 ? 'nd' : current === 3 ? 'rd' : 'th'} of the month.\n\nEnter the new day of the month (1-31):`,
+      String(current)
+    );
+    if (input == null || !input.trim()) return;
+    const day = parseInt(input.trim(), 10);
+    if (isNaN(day) || day < 1 || day > 31) {
+      window.alert('Enter a number between 1 and 31.');
+      return;
+    }
+    setData(d => ({
+      ...d,
+      monthly: d.monthly.map(m => m.id === row.id ? { ...m, dueDay: day } : m),
+      history: [
+        { id: Date.now(), date: new Date().toISOString(), kind: 'deferred', name: row.name || 'item', from: `day ${current}`, to: `day ${day}` },
+        ...(d.history || []),
+      ].slice(0, 50),
+    }));
+  };
+
   const countToggle = (key, label = 'counted', tooltip = 'On = this tab counts in overview totals and projection. Off = tracked here only.') => (
     <label className="count-toggle" title={tooltip}>
       <input type="checkbox" checked={cnt(key)} onChange={e => setCounted(key, e.target.checked)} />
@@ -2208,7 +2230,12 @@ export default function DashboardPage() {
                   onSchemaChange={(cols) => setSchema('monthly', cols)}
                   linkTargets={linkTargets}
                   onJump={jumpTo}
-                  rowActions={(row) => payButtons('monthly', row, 'Paid this month — subtracts from cash, bill stays for next month', 'Partial payment — enter how much')}
+                  rowActions={(row) => (
+                    <>
+                      {payButtons('monthly', row, 'Paid this month — subtracts from cash, bill stays for next month', 'Partial payment — enter how much')}
+                      <button className="act-btn defer" title="Change which day of the month this is due" onClick={() => changeMonthlyDate(row)}>📅</button>
+                    </>
+                  )}
                   footerExtras={[`Due per day: ${fmt2(rows.reduce((s, e) => s + (e.amount || 0), 0) / 30)}`]}
                 />
               </div>
