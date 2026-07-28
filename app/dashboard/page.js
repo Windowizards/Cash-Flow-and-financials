@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import './dashboard.css';
 
@@ -274,15 +274,66 @@ const CUSTOM_TAB_COLUMNS = [
 
 function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDelRow, onSchemaChange, footerExtras = [], linkTargets = [], onJump }) {
   const [q, setQ] = useState('');
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+  const [liveWidths, setLiveWidths] = useState({});
+  const dragRef = useRef(null);
+
   const addColumn = () => onSchemaChange([...columns, { key: 'c_' + Date.now(), label: 'New column', type: 'text' }]);
   const renameColumn = (key, label) => onSchemaChange(columns.map(c => c.key === key ? { ...c, label } : c));
   const retypeColumn = (key, type) => onSchemaChange(columns.map(c => c.key === key ? { ...c, type } : c));
   const removeColumn = (key) => onSchemaChange(columns.filter(c => c.key !== key));
 
+  const toggleSort = (key) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir('asc'); }
+    else if (sortDir === 'asc') setSortDir('desc');
+    else { setSortKey(null); setSortDir('asc'); }
+  };
+
+  const colWidth = (key) => liveWidths[key] || (columns.find(c => c.key === key) || {}).width;
+
+  const startResize = (e, col) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = colWidth(col.key) || e.currentTarget.parentElement.offsetWidth;
+    dragRef.current = { key: col.key, startX, startWidth };
+    const onMove = (ev) => {
+      if (!dragRef.current) return;
+      const next = Math.max(50, dragRef.current.startWidth + (ev.clientX - dragRef.current.startX));
+      setLiveWidths(w => ({ ...w, [dragRef.current.key]: next }));
+    };
+    const onUp = () => {
+      if (dragRef.current) {
+        const key = dragRef.current.key;
+        setLiveWidths(w => {
+          if (w[key]) onSchemaChange(columns.map(c => c.key === key ? { ...c, width: w[key] } : c));
+          return w;
+        });
+      }
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const needle = q.trim().toLowerCase();
-  const shown = needle
+  const filtered = needle
     ? rows.filter(r => columns.some(c => String(r[c.key] == null ? '' : r[c.key]).toLowerCase().includes(needle)))
     : rows;
+
+  const shown = sortKey
+    ? [...filtered].sort((a, b) => {
+        const av = a[sortKey], bv = b[sortKey];
+        const an = parseFloat(av), bn = parseFloat(bv);
+        const cmp = (av !== '' && bv !== '' && !isNaN(an) && !isNaN(bn))
+          ? an - bn
+          : String(av ?? '').localeCompare(String(bv ?? ''));
+        return sortDir === 'asc' ? cmp : -cmp;
+      })
+    : filtered;
 
   const confirmDel = (row) => {
     const label = row.name || '';
@@ -319,8 +370,15 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
           <thead>
             <tr>
               {columns.map(col => (
-                <th key={col.key} className={col.type === 'number' ? 'col-amount' : col.type === 'date' ? 'col-date' : undefined}>
+                <th
+                  key={col.key}
+                  className={col.type === 'number' ? 'col-amount' : col.type === 'date' ? 'col-date' : undefined}
+                  style={colWidth(col.key) ? { width: colWidth(col.key), minWidth: colWidth(col.key), maxWidth: colWidth(col.key) } : undefined}
+                >
                   <div className="th-edit">
+                    <button className="th-sort" title="Sort by this column (high↔low, A↔Z)" onClick={() => toggleSort(col.key)}>
+                      {sortKey === col.key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                    </button>
                     <input className="th-input" value={col.label} onChange={e => renameColumn(col.key, e.target.value)} title="Click to rename column" />
                     {!col.core && (
                       <span className="th-tools">
@@ -333,6 +391,7 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
                       </span>
                     )}
                   </div>
+                  <span className="col-resize" title="Drag to resize" onMouseDown={e => startResize(e, col)} />
                 </th>
               ))}
               {computed.map(c => <th key={c.label} className="col-amount">{c.label}</th>)}
@@ -345,7 +404,7 @@ function EditableTable({ columns, rows, computed = [], rowActions, onCell, onDel
             {shown.map(row => (
               <tr key={row.id}>
                 {columns.map(col => (
-                  <td key={col.key}>
+                  <td key={col.key} style={colWidth(col.key) ? { width: colWidth(col.key), minWidth: colWidth(col.key), maxWidth: colWidth(col.key) } : undefined}>
                     {col.type === 'link' ? (
                       <div className="link-cell">
                         <select value={row[col.key] || ''} onChange={e => onCell(row.id, col.key, e.target.value, false)}>
@@ -1062,10 +1121,10 @@ export default function DashboardPage() {
     }));
   };
 
-  const countToggle = (key) => (
-    <label className="count-toggle" title="On = this tab counts in overview totals and projection. Off = tracked here only.">
+  const countToggle = (key, label = 'counted', tooltip = 'On = this tab counts in overview totals and projection. Off = tracked here only.') => (
+    <label className="count-toggle" title={tooltip}>
       <input type="checkbox" checked={cnt(key)} onChange={e => setCounted(key, e.target.checked)} />
-      counted
+      {label}
     </label>
   );
 
@@ -1187,12 +1246,15 @@ export default function DashboardPage() {
   const aggZero = cnt('zero') ? totalZero : 0;
   const aggDebts = cnt('debts') ? totalDebts : 0;
   const aggChina = cnt('china') ? chinaRemaining : 0;
+  // Money already spent on China is real and gone, separate from what's still
+  // owed — counted by default even while the remaining balance stays excluded.
+  const aggChinaPaid = cnt('chinaPaid') ? chinaPaid : 0;
 
   const dailyBurn = aggMonthly / 30;
   const netNow = aggCash - aggOwed;
   const projected = netNow + aggIncoming;
   const runwayDays = dailyBurn > 0 ? Math.floor(netNow / dailyBurn) : Infinity;
-  const trueNet = aggCash + aggIncoming - aggOwed - aggZero - aggDebts - aggChina;
+  const trueNet = aggCash + aggIncoming - aggOwed - aggZero - aggDebts - aggChina - aggChinaPaid;
 
   const bizMonthly = data.monthly.filter(e => e.type === 'business');
   const persMonthly = data.monthly.filter(e => e.type === 'personal');
@@ -1841,7 +1903,7 @@ export default function DashboardPage() {
               <div className={`metric-card ${trueNet >= 0 ? 'success' : 'danger'}`}>
                 <div className="metric-label">True net — everything counted</div>
                 <div className="metric-value">{fmt(trueNet)}</div>
-                <div className="metric-subtext">cash + AR − owed − 0% − debts − china</div>
+                <div className="metric-subtext">cash + AR − owed − 0% − debts − china owed − china paid</div>
               </div>
             </div>
 
@@ -1884,6 +1946,9 @@ export default function DashboardPage() {
                   <tr onClick={() => setTab('owed')}><td>Owed now{!cnt('owed') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(totalOwed)}</td></tr>
                   <tr onClick={() => setTab('zero')}><td>0% card balances{!cnt('zero') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(totalZero)}</td></tr>
                   <tr onClick={() => setTab('china')}><td>China order remaining{!cnt('china') && <span className="day-offset"> (off — own environment)</span>}</td><td className="g-neg">−{fmt(chinaRemaining)}</td></tr>
+                  {chinaPaid > 0 && (
+                    <tr onClick={() => setTab('china')}><td>China order paid so far{!cnt('chinaPaid') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(chinaPaid)}</td></tr>
+                  )}
                   <tr onClick={() => setTab('debts')}><td>Big debts{!cnt('debts') && <span className="day-offset"> (off)</span>}</td><td className="g-neg">−{fmt(totalDebts)}</td></tr>
                   <tr onClick={() => setTab('monthly')}><td>Fixed monthly burn{!cnt('monthly') && <span className="day-offset"> (off)</span>}</td><td className="g-mid">{fmt(totalMonthly)}/mo · {fmt2(totalMonthly / 30)}/day</td></tr>
                   <tr onClick={() => setTab('payroll')}><td>Payroll (all jobs + standard)</td><td className="g-mid">{fmt(standardTotal + allJobsTotal)}</td></tr>
@@ -2314,7 +2379,8 @@ export default function DashboardPage() {
             <div className="tab-header">
               <input className="job-name title-input" value={tabName('china', 'China order')} onChange={e => setTabName('china', e.target.value)} />
               <div className="job-header-actions">
-                {countToggle('china')}
+                {countToggle('china', 'remaining counted', 'On = the still-owed China balance counts in Overview/Projection. Off (default) = kept in its own environment.')}
+                {countToggle('chinaPaid', 'paid counted', 'On (default) = money already spent on China subtracts from True net, since it\'s real cash that\'s gone. Off = hide it here too.')}
                 {chinaView === 'shipments' && (
                   <button className="btn-add" onClick={() => addToList('chinaOrder', { name: '', amount: 0, paid: 0, status: 'quoted', notes: '' })}>+ Add item</button>
                 )}
@@ -2324,7 +2390,8 @@ export default function DashboardPage() {
               </div>
             </div>
             <p className="subtitle">
-              This is its own environment{!cnt('china') && ' — off by default'}, funded by specific cards rather than folded into your main cash picture. Flip "counted" on if you'd rather have it hit your Overview and Projection directly.
+              Remaining balance stays out of your Overview by default — it's a future liability funded by specific cards, not current cash-negative. What you've <strong>already paid</strong> ({fmt(chinaPaid)}) counts against True net by default, since that money is genuinely gone.
+              {' '}Just make sure you're not also manually lowering a Cash account for the same payment — that would subtract it twice.
             </p>
 
             <div className="chip-bar">
